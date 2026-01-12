@@ -43,13 +43,20 @@ CSV 기준값과 비교하여 아래 중 하나라도 변경되면 변경으로 
 - 커밋은 "업데이트된 standards.csv"가 실제 결과를 완전히 대표해야 한다.
 
 ### 커밋 메시지 형식
+**제목:**
 ```
 chore: update standards.csv (stable/draft versions & links)
+```
 
+**본문:** 조사한 변경 내역을 구체적으로 나열
+```
 변경 사항:
-- [표준명]: [변경 내용 요약]
-- [표준명]: [변경 내용 요약]
-...
+- [표준명]: [구체적인 변경 내용]
+  - 기존: [이전 버전/링크]
+  - 변경: [새 버전/링크]
+- [표준명]: [구체적인 변경 내용]
+  - 기존: [이전 상태]
+  - 변경: [새 상태]
 ```
 
 **예시:**
@@ -57,10 +64,21 @@ chore: update standards.csv (stable/draft versions & links)
 chore: update standards.csv (stable/draft versions & links)
 
 변경 사항:
-- W3C VC Data Model: v2.1 Editor's Draft 링크 추가
-- W3C VC Data Integrity: v1.1 Editor's Draft 링크 추가
-- W3C DID: v1.1 Working Draft (2026-01-08) 추가
-- SD-JWT VC: draft-ietf-oauth-sd-jwt-vc-13 (2025-11-06)로 업데이트
+- W3C VC Data Model: Editor's Draft v2.1 링크 추가
+  - 기존: Draft Version Link 없음
+  - 변경: https://w3c.github.io/vc-data-model/ 추가
+  
+- W3C VC Data Integrity: Editor's Draft v1.1 링크 추가
+  - 기존: Stable Link만 존재
+  - 변경: Draft Version "v1.1 (Editor's Draft)", Draft Link "https://w3c.github.io/vc-data-integrity/" 추가
+  
+- W3C DID: v1.1 Working Draft 추가
+  - 기존: v1.0 (19 July 2022), Draft 없음
+  - 변경: Draft Version "v1.1 (Working Draft - 8 January 2026)", Draft Link "https://www.w3.org/TR/did-1.1/" 추가
+  
+- SD-JWT VC: 최신 Internet-Draft 버전 업데이트
+  - 기존: draft-ietf-oauth-sd-jwt-vc-10
+  - 변경: draft-ietf-oauth-sd-jwt-vc-13 (6 November 2025)
 ```
 
 ### CSV 반영 규칙
