@@ -17,3 +17,4 @@ Digital Identity 표준 버전 추적 저장소
 - SD-JWT-based Verifiable Credentials – Draft 버전 상세 정보 추가 (draft-13, 6 November 2025)
 - (테스트) 메일 발송 확인1
 - (테스트) 메일 발송 확인2
+- (테스트) 메일 발송 확인3
