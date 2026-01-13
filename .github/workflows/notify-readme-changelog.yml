@@ -74,6 +74,6 @@ jobs:
           to: ${{ secrets.MAIL_TO }}
           from: "standards-version-tracker <${{ secrets.SMTP_USERNAME }}>"
           body: |
-            README 변경 내역이 업데이트되었습니다.
+            표준 문서 변경 내역이 업데이트되었습니다.
 
             ${{ env.CHANGELOG }}
