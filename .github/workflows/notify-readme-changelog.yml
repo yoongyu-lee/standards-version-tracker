@@ -70,7 +70,7 @@ jobs:
           server_port: ${{ secrets.SMTP_PORT }}
           username: ${{ secrets.SMTP_USERNAME }}
           password: ${{ secrets.SMTP_PASSWORD }}
-          subject: "[standards-version-tracker] 변경 내역 업데이트 (${{ env.LATEST_DATE }})"
+          subject: "표준 문서 변경 내역 (${{ env.LATEST_DATE }})"
           to: ${{ secrets.MAIL_TO }}
           from: "standards-version-tracker <${{ secrets.SMTP_USERNAME }}>"
           body: |
