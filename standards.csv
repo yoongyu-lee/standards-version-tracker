@@ -1,13 +1,13 @@
 단체,표준명 (항목),Stable Version,Draft Version,핵심 변경 내용,Stable Version Link,Draft Version Link
-W3C,VC Data Model,v2.0 (15 May 2025),v2.1 (Editor's Draft),,https://www.w3.org/TR/vc-data-model-2.0/,https://w3c.github.io/vc-data-model/
-W3C,Verifiable Credential Data Integrity,v1.0 (14 August 2025),v1.1 (Editor's Draft),,https://www.w3.org/TR/vc-data-integrity/,https://w3c.github.io/vc-data-integrity/
-W3C,Decentralized Identifiers (DIDs) ,v1.0 (19 July 2022),v1.1 (Working Draft - 8 January 2026),,https://www.w3.org/TR/did-core/,https://www.w3.org/TR/did-1.1/
+W3C,VC Data Model,v2.0 (15 May 2025),,,https://www.w3.org/TR/vc-data-model-2.0/,
+W3C,Verifiable Credential Data Integrity,v1.1 (14 August 2025),,,https://w3c.github.io/vc-data-integrity/,
+W3C,Decentralized Identifiers (DIDs) ,v1.1 (25 November 2025),,,https://w3c.github.io/did/,
 ISO,ISO/IEC 18013-5:2021,2021-09,,,https://www.google.com/search?q=https://www.iso.org/search.html%3Fq%3D18013,
 ISO,ISO/IEC TS 23220-6:2025,Published (2025. 10),,,https://www.iso.org/standard/86787.html,
 OIDF,The OAuth 2.0 Authorization Framework (RFC 6749),Proposed Standard (October 2012),,,https://www.rfc-editor.org/info/rfc6749,
 OIDF,OpenID for Verifiable Credential Issuance 1.0,v1.0 Final (16 September 2025),,,https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html,
 OIDF,OpenID for Verifiable Presentations,v1.0 Final (9 July 2025),,,https://openid.net/specs/openid-4-verifiable-presentations-1_0.html,
 IETF,Selective Disclosure for JSON Web Tokens,Proposed Standard (November 2025),,,https://datatracker.ietf.org/doc/rfc9901/,
-IETF,SD-JWT-based Verifiable Credentials (SD-JWT VC),,Internet-Draft (draft-ietf-oauth-sd-jwt-vc-13, 6 November 2025),,,https://datatracker.ietf.org/doc/html/draft-ietf-oauth-sd-jwt-vc-13
+IETF,SD-JWT-based Verifiable Credentials (SD-JWT VC),,Internet-Draft,,,https://datatracker.ietf.org/doc/html/draft-ietf-oauth-sd-jwt-vc-10
 EU,EUDI Wallet Architecture and Reference Framework,v2.7.3,,,https://eudi.dev/2.7.3/architecture-and-reference-framework-main/,
 HL,AnonCreds Specification,v1.0 Stable,,,https://anoncreds.github.io/anoncreds-spec/,
