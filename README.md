@@ -10,9 +10,12 @@ Digital Identity 표준 버전 추적 저장소
 
 ## 변경 내역
 
+### 2026-01-15
+- (테스트) 메일 발송 확인4
+
 ### 2026-01-14
 - (테스트) 메일 발송 확인4
-- 
+  
 ### 2026-01-13
 - VC Data Model – Draft 버전 추가 (v2.1 Editor's Draft), Draft 링크 갱신
 - Verifiable Credential Data Integrity – Stable 버전 수정 (v1.1 → v1.0), Draft 버전 추가 (v1.1 Editor's Draft)
