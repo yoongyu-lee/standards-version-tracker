@@ -10,4 +10,8 @@ Digital Identity 표준 버전 추적 저장소
 
 ## 변경 내역
 
+### 2026-01-13
+- ISO/IEC TS 23220-6:2025 – Under development 상태 확인, Stable Version 및 Link N/A로 변경
+- EUDI Wallet Architecture and Reference Framework – Stable v1.6.0 → v1.10.0, Stable Version Link 갱신
+
 ### 2026-01-12
