@@ -1,0 +1,79 @@
+name: Email changelog from README
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "README.md"
+      - "standards.csv"
+
+permissions:
+  contents: read
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract latest changelog section from README
+        id: extract
+        run: |
+          set -e
+
+          # README에서 "## 변경 내역" 아래의 최신 날짜 섹션(### YYYY-MM-DD) 1개를 추출
+          python - << 'PY'
+          import re
+          from pathlib import Path
+
+          text = Path("README.md").read_text(encoding="utf-8")
+
+          # 1) "## 변경 내역" 섹션만 잘라내기
+          m = re.search(r"## 변경 내역\s*(.*)", text, re.DOTALL)
+          if not m:
+            raise SystemExit("README.md에 '## 변경 내역' 섹션이 없습니다.")
+
+          changelog = m.group(1)
+
+          # 2) 첫번째 날짜 섹션 찾기
+          # 형식: ### 2026-01-13
+          m2 = re.search(r"(###\s*\d{4}-\d{2}-\d{2}\s*\n(?:-.*\n)*)", changelog)
+          if not m2:
+            raise SystemExit("변경 내역 섹션에서 '### YYYY-MM-DD' 형식을 찾지 못했습니다.")
+
+          latest_block = m2.group(1).rstrip()
+
+          # 3) 날짜만 따로 추출
+          date_m = re.search(r"###\s*(\d{4}-\d{2}-\d{2})", latest_block)
+          latest_date = date_m.group(1) if date_m else "UNKNOWN_DATE"
+
+          Path("latest_changelog.txt").write_text(latest_block + "\n", encoding="utf-8")
+          Path("latest_date.txt").write_text(latest_date + "\n", encoding="utf-8")
+
+          print("Latest changelog date:", latest_date)
+          PY
+
+      - name: Read extracted text
+        id: readtxt
+        run: |
+          echo "LATEST_DATE=$(cat latest_date.txt)" >> $GITHUB_ENV
+          echo "CHANGELOG<<EOF" >> $GITHUB_ENV
+          cat latest_changelog.txt >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+
+      - name: Send email
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.SMTP_SERVER }}
+          server_port: ${{ secrets.SMTP_PORT }}
+          username: ${{ secrets.SMTP_USERNAME }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          subject: "[standards-version-tracker] 변경 내역 업데이트 (${{ env.LATEST_DATE }})"
+          to: ${{ secrets.MAIL_TO }}
+          from: "standards-version-tracker <${{ secrets.SMTP_USERNAME }}>"
+          body: |
+            README 변경 내역이 업데이트되었습니다.
+
+            ${{ env.CHANGELOG }}
