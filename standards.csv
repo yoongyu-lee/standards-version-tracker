@@ -1,9 +1,9 @@
 단체,표준명 (항목),Stable Version,Draft Version,핵심 변경 내용,Stable Version Link,Draft Version Link
 W3C,VC Data Model,v2.0 (Recommendation),v2.1 (Editor's Draft),,https://www.w3.org/TR/vc-data-model-2.0/,https://w3c.github.io/vc-data-model/
 W3C,Verifiable Credential Data Integrity,v1.0 (Recommendation),v1.1 (Editor's Draft),,https://www.w3.org/TR/vc-data-integrity/,https://w3c.github.io/vc-data-integrity/
-W3C,Decentralized Identifiers (DIDs),v1.0 (Recommendation),v1.1 (Working Draft - 8 January 2026),,https://www.w3.org/TR/did-core/,https://www.w3.org/TR/did-1.1/
-ISO,ISO/IEC 18013-5:2021,ISO/IEC 18013-5:2021,N/A,,https://www.iso.org/standard/69084.html,N/A
-ISO,ISO/IEC TS 23220-6:2025,N/A,N/A,"Under development (Stage 50.20)",N/A,N/A
+W3C,Decentralized Identifiers (DIDs),v1.0 (Recommendation),v1.1 (Working Draft - 9 January 2026),,https://www.w3.org/TR/did-core/,https://www.w3.org/TR/did-1.1/
+ISO,ISO/IEC 18013-5:2021,ISO/IEC 18013-5:2021 Published (Edition 1),ISO/IEC CD 18013-5 (Under development - Stage 30.60),,https://www.iso.org/standard/69084.html,https://www.iso.org/standard/91081.html
+ISO,ISO/IEC TS 23220-6:2025,ISO/IEC DTS 23220-6 (Under development - Stage 50.20),N/A,,https://www.iso.org/standard/86787.html,N/A
 OIDF,The OAuth 2.0 Authorization Framework (RFC 6749),RFC 6749,N/A,,https://datatracker.ietf.org/doc/html/rfc6749,N/A
 OIDF,OpenID for Verifiable Credential Issuance 1.0,1.0 (15 September 2025),N/A,,https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html,N/A
 OIDF,OpenID for Verifiable Presentations,1.0 (8 July 2025),N/A,,https://openid.net/specs/openid-4-verifiable-presentations-1_0.html,N/A
