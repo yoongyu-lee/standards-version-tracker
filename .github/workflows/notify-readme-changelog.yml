@@ -39,7 +39,7 @@ jobs:
 
           # 2) 첫번째 날짜 섹션 찾기
           # 형식: ### 2026-01-13
-          m2 = re.search(r"(###\s*\d{4}-\d{2}-\d{2}\s*\n(?:-.*\n)*)", changelog)
+          m2 = re.search(r"(###\s*\d{4}-\d{2}-\d{2}\s*\n(?:-.*(?:\n|$))*)", changelog)
           if not m2:
             raise SystemExit("변경 내역 섹션에서 '### YYYY-MM-DD' 형식을 찾지 못했습니다.")
 
