@@ -10,6 +10,9 @@ Digital Identity 표준 버전 추적 저장소
 
 ## 변경 내역
 
+### 2026-01-15
+- Decentralized Identifiers (DIDs) – Draft Version 날짜 정정 (9 January 2026 → 8 January 2026)
+
 ### 2026-01-13
 - Decentralized Identifiers (DIDs) – Draft Version 갱신 (8 January 2026 → 9 January 2026)
 - ISO/IEC 18013-5:2021 – Stable Version 상세 정보 보강, Draft Version Link 추가 (ISO/IEC CD 18013-5)
