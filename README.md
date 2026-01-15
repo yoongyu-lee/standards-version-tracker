@@ -10,8 +10,8 @@ This repository tracks the versions and key changes of digital identity and veri
 
 | 표준명 | Stable Version | Draft Version | 핵심 변경 내용 | Links |
 |--------|----------------|---------------|------|-------|
-| **VC Data Model** | v2.0 (2025) | - | 검증 가능 자격증명의 확장 가능한 데이터 모델 정의. Issuer-Holder-Verifier 3자 생태계 기반 | [v2.0](https://www.w3.org/TR/vc-data-model-2.0/) |
-| **Verifiable Credential Data Integrity** | - | Working Draft | 데이터 무결성 보장을 위한 암호화 메커니즘 정의 | [WD](https://www.w3.org/TR/vc-data-integrity/) |
+| **VC Data Model** | v2.0 (2025) | v2.1 (Editor’s Draft) | [D] Editor’s Draft(v2.1) 링크/버전 추가. 검증 가능 자격증명의 확장 가능한 데이터 모델 정의. Issuer-Holder-Verifier 3자 생태계 기반. 암호화 기반 변조 방지 및 기계 검증 가능 | [v2.0](https://www.w3.org/TR/vc-data-model-2.0/) \| [ED v2.1](https://w3c.github.io/vc-data-model/) |
+| **Verifiable Credential Data Integrity** | - | v1.1 (Editor’s Draft) | [D] Editor’s Draft(v1.1) 링크/버전 추가. 데이터 무결성 보장을 위한 암호화 메커니즘 정의 | [TR](https://www.w3.org/TR/vc-data-integrity/) \| [ED v1.1](https://w3c.github.io/vc-data-integrity/) |
 | **Decentralized Identifiers (DIDs)** | v1.0 | v1.1 (2026 WD) | v1.1은 실험 버전으로 프로덕션에는 v1.0 사용 권장. 탈중앙화 식별자 체계 | [v1.0](https://www.w3.org/TR/did-core/) \| [v1.1 Draft](https://www.w3.org/TR/did-1.1/) |
 
 ### ISO (International Organization for Standardization)
@@ -102,6 +102,7 @@ EUDI Wallet ARF (EU) - 유럽 디지털 지갑 아키텍처
 - ISO/IEC 18013-5:2021, ISO/IEC TS 23220-6:2025 추가
 - EUDI Wallet ARF v1.5/v1.6 추가
 - Hyperledger AnonCreds v1.0/v2.0 추가
+- W3C VC Data Model / VC Data Integrity Editor’s Draft 버전 및 링크 추가
 
 ## 기여 (Contributing)
 
