@@ -33,44 +33,50 @@ jobs:
 
           text = Path("README.md").read_text(encoding="utf-8")
 
-          # 1) "## 변경 내역" 섹션만 잘라내기
-          m = re.search(r"## 변경 내역\s*(.*)", text, re.DOTALL)
+          # 1) '## 변경 내역' 섹션 추출 (README는 변경내역만 존재한다고 가정)
+          m = re.search(r"^##\s*변경\s*내역\s*$([\s\S]*)", text, re.MULTILINE)
           if not m:
-            raise SystemExit("README.md에 '## 변경 내역' 섹션이 없습니다.")
+              raise SystemExit("README.md에 '## 변경 내역' 섹션이 없습니다. (형식: '## 변경 내역')")
 
-          changelog = m.group(1)
+          changelog = m.group(1).strip()
 
-          # 2) 최신 날짜 섹션(### YYYY-MM-DD) 1개 추출
-          m2 = re.search(r"(###\s*\d{4}-\d{2}-\d{2}\s*\n(?:-.*(?:\n|$))*)", changelog)
-          if not m2:
-            raise SystemExit("변경 내역 섹션에서 '### YYYY-MM-DD' 형식을 찾지 못했습니다.")
+          # 2) 가장 위에 있는 최신 날짜 블록 1개 추출
+          #    블록 정의:
+          #    ### YYYY-MM-DD
+          #    - ...
+          #    - ...
+          block_re = re.compile(
+              r"^###\s*(\d{4}-\d{2}-\d{2})\s*$\n"       # date header
+              r"((?:^\-\s+.*$\n?)*)",                   # bullets (0+ lines)
+              re.MULTILINE
+          )
 
-          latest_block = m2.group(1).rstrip()
+          blocks = list(block_re.finditer(changelog))
+          if not blocks:
+              raise SystemExit("변경 내역 섹션에서 '### YYYY-MM-DD' 블록을 찾지 못했습니다.")
 
-          # 3) 날짜 추출
-          date_m = re.search(r"###\s*(\d{4}-\d{2}-\d{2})", latest_block)
-          latest_date = date_m.group(1) if date_m else "UNKNOWN_DATE"
+          # README 규칙: 최신 항목이 최상단
+          latest = blocks[0]
+          latest_date = latest.group(1)
+          bullets_raw = latest.group(2) or ""
 
-          # 4) bullet 라인 추출 및 텍스트 포맷 변환
-          lines = latest_block.splitlines()
-          bullet_lines = [ln.strip() for ln in lines if ln.strip().startswith("-")]
+          # 3) bullet 라인 정리
+          bullet_lines = []
+          for ln in bullets_raw.splitlines():
+              ln = ln.strip()
+              if ln.startswith("- "):
+                  bullet_lines.append(ln[2:].strip())
 
-          # "- " 제거 후 "• "로 변환
-          pretty_items = []
-          for ln in bullet_lines:
-            item = ln.lstrip("-").strip()
-            if item:
-              pretty_items.append(f"• {item}")
+          pretty_items = [f"• {b}" for b in bullet_lines if b]
 
-          # 5) 링크 구성 (커밋 링크는 제외)
+          # 4) 링크 구성
           server_url = os.environ.get("GITHUB_SERVER_URL", "https://github.com")
           repo = os.environ.get("GITHUB_REPOSITORY", "")
-
           repo_url = f"{server_url}/{repo}" if repo else server_url
           readme_url = f"{server_url}/{repo}/blob/main/README.md" if repo else ""
           csv_url = f"{server_url}/{repo}/blob/main/standards.csv" if repo else ""
 
-          # 6) 최종 텍스트 본문 생성 (Markdown 없이)
+          # 5) 최종 텍스트 본문 생성 (Markdown 없이)
           out = []
           out.append("표준 문서 변경 알림")
           out.append("")
@@ -78,17 +84,17 @@ jobs:
           out.append("")
           out.append("변경 내역:")
           if pretty_items:
-            out.extend(pretty_items)
+              out.extend(pretty_items)
           else:
-            out.append("• (변경 항목을 찾지 못했습니다. README 변경 내역 형식을 확인하세요.)")
+              out.append("• (변경 항목이 없습니다. README 형식을 확인하세요: '### YYYY-MM-DD' 아래 '- ...' 목록)")
           out.append("")
           out.append("바로가기:")
           if repo_url:
-            out.append(f"- 저장소: {repo_url}")
+              out.append(f"- 저장소: {repo_url}")
           if readme_url:
-            out.append(f"- README: {readme_url}")
+              out.append(f"- README: {readme_url}")
           if csv_url:
-            out.append(f"- CSV: {csv_url}")
+              out.append(f"- CSV: {csv_url}")
 
           pretty_text = "\n".join(out) + "\n"
 
