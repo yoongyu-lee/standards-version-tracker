@@ -22,3 +22,9 @@ Digital Identity 표준 버전 추적 저장소
   - IETF: SD-JWT-based Verifiable Credentials (SD-JWT VC) — [D] draft-ietf-oauth-sd-jwt-vc-13 반영
   - EU: EUDI Wallet Architecture and Reference Framework — [S] 2.7.3 링크 반영
   - HL: AnonCreds Specification — [D] v1.0 Draft 링크 반영
+- 2026-01-15
+  - W3C: VC Data Model — [D] Editor’s Draft 식별자(v2.1) 반영
+  - W3C: Verifiable Credential Data Integrity — [D] Editor’s Draft 날짜(2025-08-14) 반영
+  - W3C: Decentralized Identifiers (DIDs) — [D] Editor’s Draft 식별자 확인 불가로 N/A 처리
+  - OIDF: OpenID for Verifiable Presentations — [D] Draft 식별자(July 2025) 반영
+  - HL: AnonCreds Specification — [D] Draft 표기 형식(v1.0 + Draft) 정규화
