@@ -1,13 +1,13 @@
 단체,표준명 (항목),Stable Version,Draft Version,핵심 변경 내용,Stable Version Link,Draft Version Link
-W3C,"VC Data Model","v2.0 (W3C REC)","Editor’s Draft","[S][D] VC DM 2.0 W3C Recommendation 및 Editor’s Draft 링크 반영","https://www.w3.org/TR/vc-data-model-2.0/","https://w3c.github.io/vc-data-model/"
-W3C,"Verifiable Credential Data Integrity","1.0 (W3C REC)","Editor’s Draft","[S][D] VC Data Integrity 1.0 W3C Recommendation 및 Editor’s Draft 링크 반영","https://www.w3.org/TR/vc-data-integrity/","https://w3c.github.io/vc-data-integrity/"
-W3C,"Decentralized Identifiers (DIDs)","1.0 (W3C REC)","Editor’s Draft","[S][D] DID Core 1.0 W3C Recommendation 및 Editor’s Draft 링크 반영","https://www.w3.org/TR/did-core/","https://w3c.github.io/did-core/"
-ISO,"ISO/IEC 18013-5:2021","ISO/IEC 18013-5:2021","N/A","[S] ISO/IEC 18013-5:2021 안정 버전 명칭/링크 반영","https://www.iso.org/standard/69084.html","N/A"
-ISO,"ISO/IEC TS 23220-6:2025","ISO/IEC TS 23220-6:2025 (Under development)","N/A","[S] ISO/IEC TS 23220-6:2025 TS 개발 상태 반영","https://www.iso.org/standard/86787.html","N/A"
-OIDF,"The OAuth 2.0 Authorization Framework (RFC 6749)","RFC 6749","N/A","[S] RFC 6749 Stable 링크 반영","https://www.rfc-editor.org/rfc/rfc6749.html","N/A"
-OIDF,"OpenID for Verifiable Credential Issuance 1.0","1.0 Final","N/A","[S] OpenID4VCI 1.0 Final spec 링크 반영","https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0-final.html","N/A"
-OIDF,"OpenID for Verifiable Presentations","1.0 Final","WG Draft (latest)","[S][D] 1.0 Final 및 WG Draft 링크 반영","https://openid.net/specs/openid-4-verifiable-presentations-1_0-final.html","https://openid.net/specs/openid-4-verifiable-presentations-1_0.html"
-IETF,"Selective Disclosure for JSON Web Tokens","RFC 9901","N/A","[S] RFC 9901 (SD-JWT) Stable 반영","https://datatracker.ietf.org/doc/rfc9901/","N/A"
-IETF,"SD-JWT-based Verifiable Credentials (SD-JWT VC)","N/A","draft-ietf-oauth-sd-jwt-vc-13","[D] SD-JWT VC Internet-Draft 최신 리비전 반영","N/A","https://datatracker.ietf.org/doc/draft-ietf-oauth-sd-jwt-vc/"
-EU,"EUDI Wallet Architecture and Reference Framework","2.7.3","N/A","[S] EU EUDI ARF 2.7.3 stable 문서 링크 반영","https://eu-digital-identity-wallet.github.io/eudi-doc-architecture-and-reference-framework/2.7.3/architecture-and-reference-framework/","N/A"
-HL,"AnonCreds Specification","N/A","v1.0 Draft","[D] AnonCreds v1.0 Draft 상태/링크 반영","N/A","https://hyperledger.github.io/anoncreds-spec/"
+W3C,VC Data Model,v2.0 (W3C REC),v2.1 (Editor’s Draft),[D] W3C VC Data Model Editor’s Draft 식별자(v2.1) 반영,https://www.w3.org/TR/vc-data-model-2.0/,https://w3c.github.io/vc-data-model/
+W3C,Verifiable Credential Data Integrity,1.0 (W3C REC),2025-08-14 (Editor’s Draft),[D] VC Data Integrity Editor’s Draft 날짜(2025-08-14) 반영,https://www.w3.org/TR/vc-data-integrity/,https://w3c.github.io/vc-data-integrity/
+W3C,Decentralized Identifiers (DIDs),1.0 (W3C REC),N/A,[D] DID Core Editor’s Draft 식별자(버전/날짜) 확인 불가로 N/A 처리,https://www.w3.org/TR/did-core/,N/A
+ISO,ISO/IEC 18013-5:2021,ISO/IEC 18013-5:2021,N/A,[S] ISO/IEC 18013-5:2021 안정 버전 명칭/링크 반영,https://www.iso.org/standard/69084.html,N/A
+ISO,ISO/IEC TS 23220-6:2025,ISO/IEC TS 23220-6:2025 (Under development),N/A,[S] ISO/IEC TS 23220-6:2025 TS 개발 상태 반영,https://www.iso.org/standard/86787.html,N/A
+OIDF,The OAuth 2.0 Authorization Framework (RFC 6749),RFC 6749,N/A,[S] RFC 6749 Stable 링크 반영,https://www.rfc-editor.org/rfc/rfc6749.html,N/A
+OIDF,OpenID for Verifiable Credential Issuance 1.0,1.0 Final,N/A,[S] OpenID4VCI 1.0 Final spec 링크 반영,https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0-final.html,N/A
+OIDF,OpenID for Verifiable Presentations,1.0 Final,July 2025 (Standards Track),[D] OpenID4VP Draft 식별자(July 2025) 반영,https://openid.net/specs/openid-4-verifiable-presentations-1_0-final.html,https://openid.net/specs/openid-4-verifiable-presentations-1_0.html
+IETF,Selective Disclosure for JSON Web Tokens,RFC 9901,N/A,[S] RFC 9901 (SD-JWT) Stable 반영,https://datatracker.ietf.org/doc/rfc9901/,N/A
+IETF,SD-JWT-based Verifiable Credentials (SD-JWT VC),N/A,draft-ietf-oauth-sd-jwt-vc-13,[D] SD-JWT VC Internet-Draft 최신 리비전 반영,N/A,https://datatracker.ietf.org/doc/draft-ietf-oauth-sd-jwt-vc/
+EU,EUDI Wallet Architecture and Reference Framework,2.7.3,N/A,[S] EU EUDI ARF 2.7.3 stable 문서 링크 반영,https://eu-digital-identity-wallet.github.io/eudi-doc-architecture-and-reference-framework/2.7.3/architecture-and-reference-framework/,N/A
+HL,AnonCreds Specification,N/A,v1.0 (Draft),[D] AnonCreds Draft 표기 형식(v1.0 + Draft) 정규화,N/A,https://hyperledger.github.io/anoncreds-spec/
