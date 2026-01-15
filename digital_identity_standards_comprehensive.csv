@@ -1,0 +1,44 @@
+Standard Name,Organization,Version,Publication Date,Status,Primary Purpose,Key Features,Related Standards,Use Cases,Technical Highlights,Official URL,Notes
+W3C Verifiable Credentials Data Model v2.0/2.1,W3C (World Wide Web Consortium),"2.0 (Recommendation), 2.1 (Draft)",2024 (v2.1 draft),v2.0 Recommendation, v2.1 Working Draft,"Defines data model for expressing credentials on the Web in a cryptographically secure, privacy-respecting, and machine-verifiable manner","- Three-party model (Issuer, Holder, Verifier)
+- Tamper-evident credentials
+- Privacy-preserving technologies
+- Support for multiple proof formats
+- JSON-LD based extensibility","DID Core, JSON-LD, JWT, JSON Web Signature","Educational qualifications, healthcare data, financial credentials, government-issued IDs","- Verifiable Presentations for selective disclosure
+- Support for zero-knowledge proofs
+- Multiple serialization formats
+- Cryptographic proofs (digital signatures)",https://www.w3.org/TR/vc-data-model-2.0/,Successor to VC Data Model 1.1, enhanced privacy features
+W3C Decentralized Identifiers (DIDs) v1.0,W3C (World Wide Web Consortium),1.0 (v1.1 experimental),2022-07-19 (v1.0),W3C Recommendation,Enable verifiable, decentralized digital identity without centralized registries or identity providers,"- URI-based identifier format (did:method:id)
+- DID Documents with verification methods
+- Controller authorization
+- Multiple DID methods support
+- Cryptographic proof capabilities","Verifiable Credentials, JSON-LD, JOSE, Multibase","Self-sovereign identity, authentication, authorization, service endpoints, verifiable credentials","- Method-agnostic architecture
+- DID Resolution and dereferencing
+- Verification relationships (authentication, assertion, key agreement, capability invocation/delegation)
+- Multiple representations (JSON, JSON-LD, CBOR)",https://www.w3.org/TR/did-core/,103+ experimental DID method specifications exist; designed for decoupling from centralized authorities
+ISO/IEC 18013-5:2021,ISO/IEC JTC 1/SC 17,"18013-5:2021 (CD version in development)","2021-09 (published), CD under development",International Standard (published),Standardize mobile driving license (mDL) implementation and interface specifications,"- mDL and mDL Reader interface specification
+- Issuing authority infrastructure interface
+- Data retrieval and verification protocols
+- Security mechanisms for mobile devices
+- Selective disclosure support","ISO/IEC 18013 series, ISO/IEC 7816, Mobile security standards","Digital driver's license, age verification, identity verification, cross-border recognition","- Mobile Security Object (MSO)
+- Offline and online verification modes
+- BLE, NFC, WiFi Aware communication
+- Biometric authentication
+- Data categories with mandatory/optional elements",https://www.iso.org/standard/69084.html,Adopted by Korean standard as KS X ISO/IEC 18013-5; widely implemented in government mDL programs
+OpenID for Verifiable Presentations (OpenID4VP),OpenID Foundation,1.0 (Working Group Draft),2023-2025 (ongoing draft updates),Working Draft,Define protocol for requesting and presenting Verifiable Credentials using OAuth 2.0 framework,"- VP Token response type
+- Presentation Exchange protocol
+- Multiple credential format support
+- Same-device and cross-device flows
+- Digital Credentials API integration","OAuth 2.0, OpenID Connect, W3C VC Data Model, Presentation Exchange","Identity verification, credential presentation, selective attribute disclosure, age verification","- Request/response via HTTPS and redirects
+- Presentation Definition for credential requirements
+- Presentation Submission for response metadata
+- Support for JWT, JSON-LD, SD-JWT formats
+- Integration with wallet applications",https://openid.net/specs/openid-4-verifiable-presentations-1_0.html,Extends OAuth 2.0; complements OpenID4VCI (Verifiable Credential Issuance)
+Selective Disclosure for JWTs (SD-JWT),IETF OAuth Working Group,Draft 22+ (RFC track),2023-ongoing (draft),IETF Internet-Draft,Enable selective disclosure of individual claims in JSON Web Tokens without revealing undisclosed data,"- Hash-based claim concealment
+- Salt-based security
+- Nested disclosure support
+- Key Binding JWT option
+- JWS Compact Serialization extension","JWT (RFC 7519), JWS (RFC 7515), JSON (RFC 8259)","Privacy-preserving credentials, minimal disclosure identity verification, GDPR compliance, zero-trust architectures","- Issuer-signed JWT with hashed disclosures
+- Holder selectively shares cleartext disclosures
+- Verifier validates via hash comparison
+- Support for object properties and array elements
+- SD-JWT+KB format for holder binding",https://datatracker.ietf.org/doc/draft-ietf-oauth-selective-disclosure-jwt/,Critical for privacy-compliant VC implementations; prevents information oversharing
