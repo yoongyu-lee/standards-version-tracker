@@ -1,13 +1,13 @@
 단체,표준명 (항목),Stable Version,Draft Version,핵심 변경 내용,Stable Version Link,Draft Version Link
-W3C,VC Data Model,v2.0 (2025-05-14),v2.1 (Editor's Draft),"새로운 securing mechanisms, BitstringStatusList 추가, contexts v2 도입",https://www.w3.org/TR/vc-data-model-2.0/,https://w3c.github.io/vc-data-model/
-W3C,Verifiable Credential Data Integrity,v1.0 (2023-03-09),v1.1 (Editor's Draft),"Data Integrity proof 메커니즘, cryptosuite 정의 및 확장",https://www.w3.org/TR/vc-data-integrity/,https://w3c.github.io/vc-data-integrity/
-W3C,Decentralized Identifiers (DIDs),v1.0 (2022-07-19),v1.1 (Working Draft),"DID resolution, DID URL dereferencing 개선",https://www.w3.org/TR/did-core/,https://www.w3.org/TR/did-1.1/
-ISO,ISO/IEC 18013-5:2021,2021 Edition,CD 18013-5 (Committee Draft),"모바일 운전면허증(mDL) 표준, device engagement 및 reader authentication",https://www.iso.org/standard/69084.html,https://www.iso.org/standard/91081.html
-ISO,ISO/IEC TS 23220-6:2025,2025 Edition (Published 2025-10-21),N/A,Digital credential wallet 보안 및 인터페이스 표준,https://www.iso.org/standard/86787.html,
-OIDF,The OAuth 2.0 Authorization Framework (RFC 6749),RFC 6749 (2012-10-31),N/A (Stable RFC),"OAuth 2.0 인증 프레임워크 - authorization code, implicit, client credentials flows",https://www.rfc-editor.org/rfc/rfc6749.html,
-OIDF,OpenID for Verifiable Credential Issuance 1.0,"v1.0 (Final, 2025-09-15)",N/A,"OAuth 2.0 기반 Verifiable Credential 발급 프로토콜, batch/deferred issuance 지원",https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html,
-OIDF,OpenID for Verifiable Presentations,"v1.0 (Final, 2025-07-08)",Draft 20+,"VP 제출 프로토콜, presentation_definition 메커니즘, same-device/cross-device flows",https://openid.net/specs/openid-4-verifiable-presentations-1_0.html,https://openid.net/specs/openid-4-verifiable-presentations-1_0-20.html
-IETF,Selective Disclosure for JSON Web Tokens,N/A (Internet-Draft),draft-ietf-oauth-selective-disclosure-jwt,"JWT 기반 selective disclosure, salted hash disclosure mechanism",,https://datatracker.ietf.org/doc/html/draft-ietf-oauth-selective-disclosure-jwt
-IETF,SD-JWT-based Verifiable Credentials (SD-JWT VC),N/A (Internet-Draft),draft-ietf-oauth-sd-jwt-vc-13 (2025-11-06),"SD-JWT를 VC 포맷으로 활용, W3C VCDM 호환성 유지",,https://datatracker.ietf.org/doc/html/draft-ietf-oauth-sd-jwt-vc
-EU,EUDI Wallet Architecture and Reference Framework,v2.4.0+,Latest (GitHub),"eIDAS 2.0 준수 디지털 신원 지갑 아키텍처, PID/attestation 메커니즘",https://eu-digital-identity-wallet.github.io/eudi-doc-architecture-and-reference-framework/,https://github.com/eu-digital-identity-wallet/eudi-doc-architecture-and-reference-framework
-HL,AnonCreds Specification,v1.0,Latest (GitHub),"Zero-knowledge proof 기반 익명 credential, CL signatures, predicates 지원",https://hyperledger.github.io/anoncreds-spec/,https://github.com/hyperledger/anoncreds-spec
+W3C,"VC Data Model","","","","",""
+W3C,"Verifiable Credential Data Integrity","","","","",""
+W3C,"Decentralized Identifiers (DIDs)","","","","",""
+ISO,"ISO/IEC 18013-5:2021","","","","",""
+ISO,"ISO/IEC TS 23220-6:2025","","","","",""
+OIDF,"The OAuth 2.0 Authorization Framework (RFC 6749)","","","","",""
+OIDF,"OpenID for Verifiable Credential Issuance 1.0","","","","",""
+OIDF,"OpenID for Verifiable Presentations","","","","",""
+IETF,"Selective Disclosure for JSON Web Tokens","","","","",""
+IETF,"SD-JWT-based Verifiable Credentials (SD-JWT VC)","","","","",""
+EU,"EUDI Wallet Architecture and Reference Framework","","","","",""
+HL,"AnonCreds Specification","","","","",""
