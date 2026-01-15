@@ -1,4 +1,4 @@
-name: Email changelog from README
+name: Email changelog from README (pretty text)
 
 on:
   push:
@@ -18,15 +18,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Extract latest changelog section from README
+      - name: Extract latest changelog section from README (pretty text)
         id: extract
+        env:
+          GITHUB_SERVER_URL: ${{ github.server_url }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           set -e
 
-          # README에서 "## 변경 내역" 아래의 최신 날짜 섹션(### YYYY-MM-DD) 1개를 추출
           python - << 'PY'
           import re
           from pathlib import Path
+          import os
 
           text = Path("README.md").read_text(encoding="utf-8")
 
@@ -37,19 +40,59 @@ jobs:
 
           changelog = m.group(1)
 
-          # 2) 첫번째 날짜 섹션 찾기
-          # 형식: ### 2026-01-13
+          # 2) 최신 날짜 섹션(### YYYY-MM-DD) 1개 추출
           m2 = re.search(r"(###\s*\d{4}-\d{2}-\d{2}\s*\n(?:-.*(?:\n|$))*)", changelog)
           if not m2:
             raise SystemExit("변경 내역 섹션에서 '### YYYY-MM-DD' 형식을 찾지 못했습니다.")
 
           latest_block = m2.group(1).rstrip()
 
-          # 3) 날짜만 따로 추출
+          # 3) 날짜 추출
           date_m = re.search(r"###\s*(\d{4}-\d{2}-\d{2})", latest_block)
           latest_date = date_m.group(1) if date_m else "UNKNOWN_DATE"
 
-          Path("latest_changelog.txt").write_text(latest_block + "\n", encoding="utf-8")
+          # 4) bullet 라인 추출 및 텍스트 포맷 변환
+          lines = latest_block.splitlines()
+          bullet_lines = [ln.strip() for ln in lines if ln.strip().startswith("-")]
+
+          # "- " 제거 후 "• "로 변환
+          pretty_items = []
+          for ln in bullet_lines:
+            item = ln.lstrip("-").strip()
+            if item:
+              pretty_items.append(f"• {item}")
+
+          # 5) 링크 구성 (커밋 링크는 제외)
+          server_url = os.environ.get("GITHUB_SERVER_URL", "https://github.com")
+          repo = os.environ.get("GITHUB_REPOSITORY", "")
+
+          repo_url = f"{server_url}/{repo}" if repo else server_url
+          readme_url = f"{server_url}/{repo}/blob/main/README.md" if repo else ""
+          csv_url = f"{server_url}/{repo}/blob/main/standards.csv" if repo else ""
+
+          # 6) 최종 텍스트 본문 생성 (Markdown 없이)
+          out = []
+          out.append("표준 문서 변경 알림")
+          out.append("")
+          out.append(f"날짜: {latest_date}")
+          out.append("")
+          out.append("변경 내역:")
+          if pretty_items:
+            out.extend(pretty_items)
+          else:
+            out.append("• (변경 항목을 찾지 못했습니다. README 변경 내역 형식을 확인하세요.)")
+          out.append("")
+          out.append("바로가기:")
+          if repo_url:
+            out.append(f"- 저장소: {repo_url}")
+          if readme_url:
+            out.append(f"- README: {readme_url}")
+          if csv_url:
+            out.append(f"- CSV: {csv_url}")
+
+          pretty_text = "\n".join(out) + "\n"
+
+          Path("latest_changelog_pretty.txt").write_text(pretty_text, encoding="utf-8")
           Path("latest_date.txt").write_text(latest_date + "\n", encoding="utf-8")
 
           print("Latest changelog date:", latest_date)
@@ -60,7 +103,7 @@ jobs:
         run: |
           echo "LATEST_DATE=$(cat latest_date.txt)" >> $GITHUB_ENV
           echo "CHANGELOG<<EOF" >> $GITHUB_ENV
-          cat latest_changelog.txt >> $GITHUB_ENV
+          cat latest_changelog_pretty.txt >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
 
       - name: Send email
@@ -70,10 +113,8 @@ jobs:
           server_port: ${{ secrets.SMTP_PORT }}
           username: ${{ secrets.SMTP_USERNAME }}
           password: ${{ secrets.SMTP_PASSWORD }}
-          subject: "표준 문서 변경 내역 (${{ env.LATEST_DATE }})"
+          subject: "표준 문서 변경 알림 (${{ env.LATEST_DATE }})"
           to: ${{ secrets.MAIL_TO }}
           from: "standards-version-tracker <${{ secrets.SMTP_USERNAME }}>"
           body: |
-            표준 문서 변경 내역이 업데이트되었습니다.
-
             ${{ env.CHANGELOG }}
