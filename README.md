@@ -8,6 +8,10 @@
 ## 변경 내역
 
 ### 2026-01-20
+- [W3C] VC Data Model: Draft Version: v2.1 (Editor's Draft) → v2.1 (2015-01-01 Editor's Draft)
+
+
+### 2026-01-20
 - [W3C] VC Data Model: Draft Version: v2.1 (2025-10-06 Editor's Draft) → v2.1 (Editor's Draft)
 - [ISO] ISO/IEC 18013-5:2021: Draft Version: ISO/IEC DIS 18013-5 (Draft International Standard) → N/A; Draft Version Link: https://www.iso.org/standard/91081.html → N/A
 - [IETF] Selective Disclosure for JSON Web Tokens: Stable Version: RFC 9901 (2025년 11월) → RFC 9901

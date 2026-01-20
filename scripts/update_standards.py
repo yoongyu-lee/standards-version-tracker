@@ -163,34 +163,54 @@ def parse_w3c_tr_stable(url: str) -> Tuple[Optional[str], Optional[str]]:
 
 def parse_w3c_ed_draft(url: str) -> Tuple[Optional[str], Optional[str]]:
     """
-    W3C Editor's Draft on w3c.github.io:
-    - We accept version identifier (vX.Y) if present in title/h1.
-    - If no version, try modified date meta (YYYY-MM-DD) to satisfy identifier rule.
-    Output example: v2.1 (Editor's Draft) OR 2026-01-10 (Editor's Draft)
+    W3C Editor's Draft (typically w3c.github.io):
+    목표:
+      - Draft Version 규칙(식별자 포함) 만족하도록 '날짜' 또는 '버전'을 반드시 확보
+      - 가능하면 '버전 + 날짜 + 상태' 형태로 반환
+    반환 예:
+      - v2.1 (2025-10-06 Editor's Draft)
+      - 2025-10-06 (Editor's Draft)
+    실패(식별자 확보 불가) 시:
+      - (None, None)
     """
     html = http_get(url)
     soup = soup_from_html(html)
-    title = (soup.title.get_text(" ", strip=True) if soup.title else "").strip()
 
-    # Try version from title/h1
+    title = (soup.title.get_text(" ", strip=True) if soup.title else "").strip()
     h1 = soup.find("h1")
     h1txt = h1.get_text(" ", strip=True) if h1 else ""
-    ver = extract_first(r"\bv([0-9]+(\.[0-9]+){1,2})\b", h1txt, re.IGNORECASE) or \
-          extract_first(r"\bv([0-9]+(\.[0-9]+){1,2})\b", title, re.IGNORECASE)
 
+    # 1) Version 후보: title/h1에서 vX.Y(.Z)
+    ver = (
+        extract_first(r"\bv([0-9]+(\.[0-9]+){1,2})\b", h1txt, re.IGNORECASE)
+        or extract_first(r"\bv([0-9]+(\.[0-9]+){1,2})\b", title, re.IGNORECASE)
+    )
+
+    # 2) Date 후보: meta 태그 우선(수정일/발행일)
+    dt: Optional[str] = None
+    for m in soup.find_all("meta"):
+        content = (m.get("content") or "").strip()
+        # ISO date in meta content
+        d = extract_first(r"\b(\d{4}-\d{2}-\d{2})\b", content)
+        if d:
+            dt = d
+            break
+
+    # 3) 본문 텍스트에서 날짜 패턴 탐색(메타에 없을 때)
+    if not dt:
+        text = soup.get_text("\n", strip=True)
+        # 흔히 "Last updated: 2025-10-06" 같은 표현이 있어 전체에서 날짜를 잡음
+        dt = extract_first(r"\b(\d{4}-\d{2}-\d{2})\b", text)
+
+    # 4) 반환 규칙: 식별자(버전/날짜) 중 하나는 반드시 있어야 함
+    if ver and dt:
+        return f"v{ver} ({dt} Editor's Draft)", url
+    if dt:
+        return f"{dt} (Editor's Draft)", url
     if ver:
+        # 버전만 있고 날짜가 없으면 그래도 식별자 조건은 만족하므로 반환 가능
         return f"v{ver} (Editor's Draft)", url
 
-    # Try modified date from meta
-    # common patterns: <meta property="dcterms.modified" content="2025-01-14"> etc.
-    metas = soup.find_all("meta")
-    for m in metas:
-        content = m.get("content", "") or ""
-        dt = extract_first(r"\b(\d{4}-\d{2}-\d{2})\b", content)
-        if dt:
-            return f"{dt} (Editor's Draft)", url
-
-    # Can't satisfy identifier rule
     return None, None
 
 def parse_ietf_draft_from_link(url: str) -> Tuple[Optional[str], Optional[str]]:
@@ -324,33 +344,98 @@ def compute_update_for_row(org: str, spec_name: str, stable_link: str, draft_lin
 
 def validate_and_finalize(existing: Dict[str, str], upd: RowUpdate) -> RowUpdate:
     """
-    Apply strict rules:
-    - If Draft Version Link is N/A => Draft Version must be N/A
-    - If Draft Version present but no identifier => set both Draft fields to N/A (do not partially fill)
-    - If any link is N/A, keep version as N/A (avoid mismatch)
+    Enforce strict rules + prevent "degradation" (i.e., do not overwrite a more specific
+    existing value with a less specific newly-parsed value).
+
+    Rules enforced:
+    - Only finalize values for the 4 allowed columns.
+    - Stable:
+      - If Stable Link is N/A => Stable Version must be N/A
+      - If Stable Version is N/A => Stable Link must be N/A
+    - Draft (hard rules):
+      - If Draft Link is N/A => Draft Version must be N/A
+      - If Draft Link is present, Draft Version must exist and contain an identifier
+        (version/date/draft-id). Otherwise set BOTH Draft fields to N/A.
+    - Degradation prevention:
+      - If an existing value is more specific (e.g., includes a YYYY-MM-DD date or
+        draft-...-NN), do NOT replace it with a simpler new value.
+      - Links are only replaced if the new link is non-N/A or the existing link is N/A.
     """
+
     cur_stable_v = norm_na(existing.get("Stable Version"))
     cur_stable_l = norm_na(existing.get("Stable Version Link"))
     cur_draft_v = norm_na(existing.get("Draft Version"))
     cur_draft_l = norm_na(existing.get("Draft Version Link"))
 
-    new_stable_v = norm_na(upd.stable_version) if upd.stable_version is not None else cur_stable_v
-    new_stable_l = norm_na(upd.stable_link) if upd.stable_link is not None else cur_stable_l
+    cand_stable_v = norm_na(upd.stable_version) if upd.stable_version is not None else cur_stable_v
+    cand_stable_l = norm_na(upd.stable_link) if upd.stable_link is not None else cur_stable_l
+    cand_draft_v = norm_na(upd.draft_version) if upd.draft_version is not None else cur_draft_v
+    cand_draft_l = norm_na(upd.draft_link) if upd.draft_link is not None else cur_draft_l
 
-    new_draft_v = norm_na(upd.draft_version) if upd.draft_version is not None else cur_draft_v
-    new_draft_l = norm_na(upd.draft_link) if upd.draft_link is not None else cur_draft_l
+    def specificity_score(s: str) -> int:
+        s = norm_na(s)
+        if is_na(s):
+            return 0
+        score = 0
+        # Strong identifiers
+        if re.search(r"\b\d{4}-\d{2}-\d{2}\b", s):
+            score += 50
+        if re.search(r"\bdraft-[a-z0-9-]+-\d{1,2}\b", s, re.IGNORECASE):
+            score += 50
+        # Version token
+        if re.search(r"\bv?\d+\.\d+(\.\d+)?\b", s, re.IGNORECASE):
+            score += 10
+        # Non-trivial qualifiers (month names, localized date words)
+        if re.search(r"\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b", s, re.IGNORECASE):
+            score += 5
+        if re.search(r"(년|월|일)", s):
+            score += 5
+        # Slight preference for richer strings (cap so it doesn't dominate)
+        score += min(len(s), 200) // 20
+        return score
 
-    # Stable link/version consistency (soft)
+    def choose_value(cur: str, cand: str) -> str:
+        """
+        Choose candidate only if it is at least as specific as current,
+        otherwise keep current (prevents degradation).
+        """
+        cur_n = norm_na(cur)
+        cand_n = norm_na(cand)
+        if is_na(cand_n):
+            return cur_n
+        if is_na(cur_n):
+            return cand_n
+        return cand_n if specificity_score(cand_n) >= specificity_score(cur_n) else cur_n
+
+    def choose_link(cur: str, cand: str) -> str:
+        """
+        Replace link only when candidate is non-N/A OR current is N/A.
+        Prevents wiping a real link with N/A.
+        """
+        cur_n = norm_na(cur)
+        cand_n = norm_na(cand)
+        if is_na(cand_n):
+            return cur_n  # never overwrite with N/A
+        return cand_n if (not is_na(cand_n) or is_na(cur_n)) else cur_n
+
+    # 1) Apply degradation-safe selection
+    new_stable_v = choose_value(cur_stable_v, cand_stable_v)
+    new_stable_l = choose_link(cur_stable_l, cand_stable_l)
+
+    new_draft_v = choose_value(cur_draft_v, cand_draft_v)
+    new_draft_l = choose_link(cur_draft_l, cand_draft_l)
+
+    # 2) Stable consistency (soft, but enforced)
     if is_na(new_stable_l):
         new_stable_v = "N/A"
     if is_na(new_stable_v):
         new_stable_l = "N/A"
 
-    # Draft hard rules
+    # 3) Draft hard rules (strict)
     if is_na(new_draft_l):
         new_draft_v = "N/A"
     else:
-        # draft link exists -> must have acceptable identifier in version
+        # link exists -> version must be valid identifier-bearing string
         if is_na(new_draft_v) or not has_identifier(new_draft_v):
             new_draft_v = "N/A"
             new_draft_l = "N/A"
@@ -487,3 +572,28 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+def is_more_specific(new: str, old: str) -> bool:
+    """
+    새 값이 기존 값보다 '덜 구체적'이면 False.
+    구체성 기준(간단 규칙):
+    - 날짜(YYYY-MM-DD) 포함 > 미포함
+    - draft-...-NN 포함 > 미포함
+    - 길이가 긴 쪽이 대체로 더 구체(완전한 기준은 아니지만 diff-noise 방지에 유용)
+    """
+    new = norm_na(new)
+    old = norm_na(old)
+    if is_na(new):
+        return False
+    if is_na(old):
+        return True
+
+    def score(s: str) -> int:
+        sc = 0
+        if re.search(r"\b\d{4}-\d{2}-\d{2}\b", s): sc += 3
+        if re.search(r"\bdraft-[a-z0-9-]+-\d{1,2}\b", s, re.I): sc += 3
+        if re.search(r"\bv?\d+\.\d+(\.\d+)?\b", s, re.I): sc += 1
+        sc += min(len(s), 200) // 20  # 길이 보너스(과도하지 않게)
+        return sc
+
+    return score(new) >= score(old)
