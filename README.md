@@ -8,6 +8,21 @@
 ## 변경 내역
 
 ### 2026-01-20
+- [W3C] VC Data Model: Stable Version Link: https://www.w3.org/TR/vc-data-model-2.0/ → N/A; Draft Version: N/A → v2.1 (Editor's Draft)
+- [W3C] Verifiable Credential Data Integrity: Stable Version Link: https://www.w3.org/TR/vc-data-integrity/ → N/A; Draft Version Link: https://w3c.github.io/vc-data-integrity/ → N/A
+- [W3C] Decentralized Identifiers (DIDs): Stable Version Link: https://www.w3.org/TR/did-core/ → N/A; Draft Version Link: https://www.w3.org/TR/did-1.1/ → N/A
+- [ISO] ISO/IEC 18013-5:2021: Stable Version Link: https://www.iso.org/standard/69084.html → N/A; Draft Version Link: https://www.iso.org/standard/91081.html → N/A
+- [ISO] ISO/IEC TS 23220-6:2025: Stable Version Link: https://www.iso.org/standard/86787.html → N/A
+- [OIDF] The OAuth 2.0 Authorization Framework (RFC 6749): Stable Version Link: https://datatracker.ietf.org/doc/html/rfc6749 → N/A
+- [OIDF] OpenID for Verifiable Credential Issuance 1.0: Stable Version Link: https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html → N/A
+- [OIDF] OpenID for Verifiable Presentations: Stable Version Link: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html → N/A
+- [IETF] Selective Disclosure for JSON Web Tokens: Stable Version: N/A → RFC 9901
+- [IETF] SD-JWT-based Verifiable Credentials (SD-JWT VC): Draft Version Link: https://datatracker.ietf.org/doc/draft-ietf-oauth-sd-jwt-vc/ → N/A
+- [EU] EUDI Wallet Architecture and Reference Framework: Stable Version: N/A → v1.10.0
+- [HL] AnonCreds Specification: Stable Version Link: https://hyperledger.github.io/anoncreds-spec/ → N/A
+
+
+### 2026-01-20
 - [W3C] VC Data Model: Draft Version: v2.1 (Editor's Draft) → v2.1 (2015-01-01 Editor's Draft)
 
 
