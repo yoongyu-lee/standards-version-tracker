@@ -2,9 +2,7 @@ name: Email changelog from README (pretty text)
 
 on:
   workflow_run:
-    # IMPORTANT:
-    # - This must match the *exact* `name:` of your update workflow (the one that commits/pushes standards.csv/README.md).
-    # - If the name is different, replace the value below.
+    # ✅ Must match the exact `name:` of your update workflow
     workflows: ["Update standards versions"]
     types: [completed]
 
@@ -13,15 +11,16 @@ permissions:
 
 jobs:
   notify:
-    # Send only when the update workflow succeeded
+    # ✅ Send only when the update workflow succeeded
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout (the commit produced by the update workflow)
+      - name: Checkout (latest main)
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: main
+          fetch-depth: 0
 
       - name: Extract latest changelog section from README (pretty text)
         id: extract
@@ -46,7 +45,6 @@ jobs:
           # 1) '## 변경 내역' 섹션 추출
           m = re.search(r"^##\s*변경\s*내역\s*$([\s\S]*)", text, re.MULTILINE)
           if not m:
-              # 섹션 자체가 없으면: 변경내역 없음 메일로 처리 (실패하지 않음)
               latest_date = "NO_CHANGE"
               pretty_items = []
           else:
@@ -57,13 +55,12 @@ jobs:
               #    - ...
               block_re = re.compile(
                   r"^###\s*(\d{4}-\d{2}-\d{2})\s*$\n"       # date header
-                  r"((?:^\-\s+.*$\n?)*)",                     # bullets (0+ lines)
+                  r"((?:^\-\s+.*$\n?)*)",                   # bullets (0+ lines)
                   re.MULTILINE
               )
 
               blocks = list(block_re.finditer(changelog))
               if not blocks:
-                  # 날짜 블록이 없으면: 변경내역 없음 메일로 처리 (실패하지 않음)
                   latest_date = "NO_CHANGE"
                   pretty_items = []
               else:
@@ -93,7 +90,6 @@ jobs:
           out.append("표준 문서 변경 알림")
           out.append("")
 
-          # 날짜 표기: NO_CHANGE면 KST 오늘 날짜를 표시(메일 가독성)
           if latest_date == "NO_CHANGE":
               out.append(f"날짜: {today_kst} (변경내역 없음)")
           else:
