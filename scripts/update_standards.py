@@ -163,14 +163,19 @@ def parse_w3c_tr_stable(url: str) -> Tuple[Optional[str], Optional[str]]:
 
 def parse_w3c_ed_draft(url: str) -> Tuple[Optional[str], Optional[str]]:
     """
-    W3C Editor's Draft (typically w3c.github.io):
-    목표:
-      - Draft Version 규칙(식별자 포함) 만족하도록 '날짜' 또는 '버전'을 반드시 확보
-      - 가능하면 '버전 + 날짜 + 상태' 형태로 반환
-    반환 예:
-      - v2.1 (2025-10-06 Editor's Draft)
-      - 2025-10-06 (Editor's Draft)
-    실패(식별자 확보 불가) 시:
+    W3C Editor's Draft (w3c.github.io 등)에서 Draft Version을 '안전하게' 추출.
+
+    목표(오탐 방지):
+    - 날짜는 "버전 날짜"로 신뢰 가능한 위치에서만 뽑는다.
+      (meta dcterms.modified / article time / respec This version / Last updated 라인 등)
+    - 페이지 전체 텍스트에서 '첫 날짜' 같은 위험한 fallback은 사용하지 않는다.
+      (copyright, 예시 날짜 등 오탐 방지)
+
+    반환 포맷:
+      - vX.Y (YYYY-MM-DD Editor's Draft)  # 둘 다 있으면 최선
+      - YYYY-MM-DD (Editor's Draft)       # 날짜만 확보
+      - vX.Y (Editor's Draft)             # 버전만 확보(날짜 못 찾으면)
+    식별자(버전/날짜) 둘 다 못 찾으면:
       - (None, None)
     """
     html = http_get(url)
@@ -180,35 +185,68 @@ def parse_w3c_ed_draft(url: str) -> Tuple[Optional[str], Optional[str]]:
     h1 = soup.find("h1")
     h1txt = h1.get_text(" ", strip=True) if h1 else ""
 
-    # 1) Version 후보: title/h1에서 vX.Y(.Z)
+    # 1) 버전 후보: title/h1에서 vX.Y(.Z)
     ver = (
         extract_first(r"\bv([0-9]+(\.[0-9]+){1,2})\b", h1txt, re.IGNORECASE)
         or extract_first(r"\bv([0-9]+(\.[0-9]+){1,2})\b", title, re.IGNORECASE)
     )
 
-    # 2) Date 후보: meta 태그 우선(수정일/발행일)
+    # 2) 날짜 후보: "신뢰 가능한 위치"에서만 추출
     dt: Optional[str] = None
+
+    # 2-1) meta: dcterms.modified / dcterms.issued / dc.date / last-modified 등
+    meta_keys = {
+        "dcterms.modified",
+        "dcterms.issued",
+        "dc.date",
+        "dc.modified",
+        "last-modified",
+    }
     for m in soup.find_all("meta"):
-        content = (m.get("content") or "").strip()
-        # ISO date in meta content
-        d = extract_first(r"\b(\d{4}-\d{2}-\d{2})\b", content)
-        if d:
-            dt = d
-            break
+        name = (m.get("name") or "").strip().lower()
+        prop = (m.get("property") or "").strip().lower()
+        key = name or prop
+        if key in meta_keys:
+            content = (m.get("content") or "").strip()
+            d = extract_first(r"\b(\d{4}-\d{2}-\d{2})\b", content)
+            if d:
+                dt = d
+                break
 
-    # 3) 본문 텍스트에서 날짜 패턴 탐색(메타에 없을 때)
+    # 2-2) <time datetime="YYYY-MM-DD..."> 또는 <time>YYYY-MM-DD</time>
     if not dt:
-        text = soup.get_text("\n", strip=True)
-        # 흔히 "Last updated: 2025-10-06" 같은 표현이 있어 전체에서 날짜를 잡음
-        dt = extract_first(r"\b(\d{4}-\d{2}-\d{2})\b", text)
+        for t in soup.find_all("time"):
+            datetime_attr = (t.get("datetime") or "").strip()
+            d = extract_first(r"\b(\d{4}-\d{2}-\d{2})\b", datetime_attr)
+            if d:
+                dt = d
+                break
+            txt = t.get_text(" ", strip=True)
+            d = extract_first(r"\b(\d{4}-\d{2}-\d{2})\b", txt)
+            if d:
+                dt = d
+                break
 
-    # 4) 반환 규칙: 식별자(버전/날짜) 중 하나는 반드시 있어야 함
+    # 2-3) ReSpec/바이크쉐드 계열: "This version:" / "Last updated:" 근처 텍스트에서 날짜 추출
+    # (전체 텍스트에서 임의의 날짜를 잡지 않도록 라인 기반으로 제한)
+    if not dt:
+        body_text = soup.get_text("\n", strip=True)
+        for line in body_text.splitlines():
+            l = line.strip()
+            if not l:
+                continue
+            if re.search(r"\b(This version|Last updated|Updated|Modified)\b", l, re.IGNORECASE):
+                d = extract_first(r"\b(\d{4}-\d{2}-\d{2})\b", l)
+                if d:
+                    dt = d
+                    break
+
+    # 3) 반환: 가장 정보가 풍부한 형태 우선
     if ver and dt:
         return f"v{ver} ({dt} Editor's Draft)", url
     if dt:
         return f"{dt} (Editor's Draft)", url
     if ver:
-        # 버전만 있고 날짜가 없으면 그래도 식별자 조건은 만족하므로 반환 가능
         return f"v{ver} (Editor's Draft)", url
 
     return None, None
