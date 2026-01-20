@@ -33,6 +33,8 @@ standards.csv를 Source of Truth로 사용해 Stable/Draft 버전과 링크를 �
 
 지원 파서(링크가 있을 때만; 일부 HL은 stable 페이지에서 draft 링크를 발견 가능):
 - W3C TR (Stable/Draft): 상태 + 버전
+  - ✅ 개선: SOTD/상태 탐지 대소문자/공백 변화에 더 강하게
+  - ✅ 개선: 상태를 못 잡아도 버전만 확인되면 "vX.Y (W3C TR)"로 최소 기록
 - W3C Editor’s Draft(w3c.github.io): 버전/날짜(안전 추출) + (추가) HTTP Last-Modified fallback
 - IETF RFC(Stable)
 - IETF Internet-Draft(datatracker 페이지에서 최신 -NN 추출)
@@ -283,10 +285,13 @@ def parse_w3c_tr_version_from_url(url: str) -> Optional[str]:
     return extract_first(r"/[a-z0-9\-]+-([0-9]+\.[0-9]+(\.[0-9]+)?)\/?$", url, re.IGNORECASE)
 
 def w3c_extract_sotd_window_text(soup: BeautifulSoup) -> str:
+    """
+    ✅ 개선: "Status of This Document" 탐지를 대소문자 무시 + 공백 변화에 강하게
+    """
     body_text = soup.get_text("\n", strip=True)
     lines = body_text.splitlines()
     for i, line in enumerate(lines):
-        if "Status of This Document" in line:
+        if re.search(r"status\s+of\s+this\s+document", line, re.IGNORECASE):
             start = max(0, i)
             end = min(len(lines), i + 250)
             return "\n".join(lines[start:end])
@@ -312,12 +317,15 @@ def parse_w3c_tr_stable(url: str) -> Tuple[Optional[str], Optional[str]]:
 
     window = w3c_extract_sotd_window_text(soup)
 
+    # ✅ 개선: 상태 매칭을 케이스 인센서티브로
     status = None
+    window_l = window.lower()
     for k, v in status_map.items():
-        if k in window:
+        if k.lower() in window_l:
             status = v
             break
 
+    # 안전장치: did-1.1 Recommendation 오탐 방지
     if "did-1.1" in url and re.search(r"\bexperimental\b|DO NOT implement", window, re.IGNORECASE):
         if status == "Recommendation":
             status = None
@@ -334,8 +342,11 @@ def parse_w3c_tr_stable(url: str) -> Tuple[Optional[str], Optional[str]]:
             or extract_first(r"\b([0-9]+\.[0-9]+(\.[0-9]+)?)\b", title)
         )
 
+    # ✅ 개선: 상태까지 잡히면 기존 포맷 유지, 상태를 못 잡아도 버전만 잡히면 최소 기록
     if ver and status:
         return f"v{ver} ({status})", url
+    if ver:
+        return f"v{ver} (W3C TR)", url
     return None, None
 
 def parse_w3c_ed_draft(url: str) -> Tuple[Optional[str], Optional[str]]:
@@ -819,8 +830,6 @@ def main() -> int:
                 diffs.append(f"{col}: {b or '(empty)'} → {a}")
 
         # 4) CSV 실제 변경 여부 판단:
-        #    - 위 diffs(4컬럼)가 있으면 무조건 변경
-        #    - 또는 핵심 변경 내용이 바뀐 경우에도 변경(버전 변경이면 보통 diffs도 생기지만 안전하게 포함)
         core_changed = False
         if "핵심 변경 내용" in fieldnames:
             b_core = (before_raw.get("핵심 변경 내용", "") or "").strip()

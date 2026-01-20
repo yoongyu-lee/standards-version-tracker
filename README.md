@@ -8,20 +8,6 @@
 ## 변경 내역
 
 ### 2026-01-20
-- [W3C] VC Data Model: Draft Version: N/A → v2.1 (2025-10-06 Editor's Draft)
-- [W3C] Verifiable Credential Data Integrity: Draft Version: N/A → 2025-08-14 (Editor's Draft)
-- [ISO] ISO/IEC 18013-5:2021: Stable Version: N/A → ISO/IEC 18013-5:2021 (ISO Publication: 2021-09)
-- [ISO] ISO/IEC TS 23220-6:2025: Stable Version: N/A → ISO/IEC TS 23220-6:2025 (ISO Publication: 2025-10)
-- [OIDF] The OAuth 2.0 Authorization Framework (RFC 6749): Stable Version: N/A → RFC 6749
-- [OIDF] OpenID for Verifiable Credential Issuance 1.0: Stable Version: N/A → 1.0 (Final, 2025-09-16)
-- [OIDF] OpenID for Verifiable Presentations: Stable Version: N/A → 1.0 (Final, 2025-07-09)
-- [IETF] Selective Disclosure for JSON Web Tokens: Stable Version: N/A → RFC 9901
-- [IETF] SD-JWT-based Verifiable Credentials (SD-JWT VC): Draft Version: N/A → draft-ietf-oauth-sd-jwt-vc-13 (Internet-Draft)
-- [EU] EUDI Wallet Architecture and Reference Framework: Stable Version: N/A → v1.10.0
-- [HL] AnonCreds Specification: Stable Version: N/A → v1.0
-
-
-### 2026-01-20
 
 
 <!--
