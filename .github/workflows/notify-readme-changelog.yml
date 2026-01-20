@@ -30,44 +30,54 @@ jobs:
           import re
           from pathlib import Path
           import os
+          from datetime import datetime, timezone, timedelta
 
           text = Path("README.md").read_text(encoding="utf-8")
 
-          # 1) '## 변경 내역' 섹션 추출 (README는 변경내역만 존재한다고 가정)
+          # (KST) 날짜 표기 보정용
+          KST = timezone(timedelta(hours=9))
+          today_kst = datetime.now(KST).strftime("%Y-%m-%d")
+
+          # 1) '## 변경 내역' 섹션 추출
           m = re.search(r"^##\s*변경\s*내역\s*$([\s\S]*)", text, re.MULTILINE)
           if not m:
-              raise SystemExit("README.md에 '## 변경 내역' 섹션이 없습니다. (형식: '## 변경 내역')")
+              # 섹션 자체가 없으면: 변경내역 없음 메일로 처리 (실패하지 않음)
+              latest_date = "NO_CHANGE"
+              pretty_items = []
+              changelog_found = False
+              changelog = ""
+          else:
+              changelog_found = True
+              changelog = m.group(1).strip()
 
-          changelog = m.group(1).strip()
+              # 2) 가장 위에 있는 최신 날짜 블록 1개 추출
+              #    ### YYYY-MM-DD
+              #    - ...
+              block_re = re.compile(
+                  r"^###\s*(\d{4}-\d{2}-\d{2})\s*$\n"       # date header
+                  r"((?:^\-\s+.*$\n?)*)",                   # bullets (0+ lines)
+                  re.MULTILINE
+              )
 
-          # 2) 가장 위에 있는 최신 날짜 블록 1개 추출
-          #    블록 정의:
-          #    ### YYYY-MM-DD
-          #    - ...
-          #    - ...
-          block_re = re.compile(
-              r"^###\s*(\d{4}-\d{2}-\d{2})\s*$\n"       # date header
-              r"((?:^\-\s+.*$\n?)*)",                   # bullets (0+ lines)
-              re.MULTILINE
-          )
+              blocks = list(block_re.finditer(changelog))
+              if not blocks:
+                  # 날짜 블록이 없으면: 변경내역 없음 메일로 처리 (실패하지 않음)
+                  latest_date = "NO_CHANGE"
+                  pretty_items = []
+              else:
+                  # README 규칙: 최신 항목이 최상단
+                  latest = blocks[0]
+                  latest_date = latest.group(1)
+                  bullets_raw = latest.group(2) or ""
 
-          blocks = list(block_re.finditer(changelog))
-          if not blocks:
-              raise SystemExit("변경 내역 섹션에서 '### YYYY-MM-DD' 블록을 찾지 못했습니다.")
+                  # 3) bullet 라인 정리
+                  bullet_lines = []
+                  for ln in bullets_raw.splitlines():
+                      ln = ln.strip()
+                      if ln.startswith("- "):
+                          bullet_lines.append(ln[2:].strip())
 
-          # README 규칙: 최신 항목이 최상단
-          latest = blocks[0]
-          latest_date = latest.group(1)
-          bullets_raw = latest.group(2) or ""
-
-          # 3) bullet 라인 정리
-          bullet_lines = []
-          for ln in bullets_raw.splitlines():
-              ln = ln.strip()
-              if ln.startswith("- "):
-                  bullet_lines.append(ln[2:].strip())
-
-          pretty_items = [f"• {b}" for b in bullet_lines if b]
+                  pretty_items = [f"• {b}" for b in bullet_lines if b]
 
           # 4) 링크 구성
           server_url = os.environ.get("GITHUB_SERVER_URL", "https://github.com")
@@ -80,13 +90,22 @@ jobs:
           out = []
           out.append("표준 문서 변경 알림")
           out.append("")
-          out.append(f"날짜: {latest_date}")
+
+          # 날짜 표기: NO_CHANGE면 KST 오늘 날짜를 표시(메일 가독성)
+          if latest_date == "NO_CHANGE":
+              out.append(f"날짜: {today_kst} (변경내역 없음)")
+          else:
+              out.append(f"날짜: {latest_date}")
+
           out.append("")
           out.append("변경 내역:")
+
+          # ✅ 변경내역이 없으면 '변경내역 없음'으로 통일
           if pretty_items:
               out.extend(pretty_items)
           else:
-              out.append("• (변경 항목이 없습니다. README 형식을 확인하세요: '### YYYY-MM-DD' 아래 '- ...' 목록)")
+              out.append("• 변경내역 없음")
+
           out.append("")
           out.append("바로가기:")
           if repo_url:
