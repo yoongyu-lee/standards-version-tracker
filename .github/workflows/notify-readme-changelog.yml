@@ -1,22 +1,27 @@
 name: Email changelog from README (pretty text)
 
 on:
-  push:
-    branches: ["main"]
-    paths:
-      - "README.md"
-      - "standards.csv"
+  workflow_run:
+    # IMPORTANT:
+    # - This must match the *exact* `name:` of your update workflow (the one that commits/pushes standards.csv/README.md).
+    # - If the name is different, replace the value below.
+    workflows: ["Update standards versions"]
+    types: [completed]
 
 permissions:
   contents: read
 
 jobs:
   notify:
+    # Send only when the update workflow succeeded
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout (the commit produced by the update workflow)
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - name: Extract latest changelog section from README (pretty text)
         id: extract
@@ -26,7 +31,7 @@ jobs:
         run: |
           set -e
 
-          python - << 'PY'
+          python3 - << 'PY'
           import re
           from pathlib import Path
           import os
@@ -44,10 +49,7 @@ jobs:
               # 섹션 자체가 없으면: 변경내역 없음 메일로 처리 (실패하지 않음)
               latest_date = "NO_CHANGE"
               pretty_items = []
-              changelog_found = False
-              changelog = ""
           else:
-              changelog_found = True
               changelog = m.group(1).strip()
 
               # 2) 가장 위에 있는 최신 날짜 블록 1개 추출
@@ -55,7 +57,7 @@ jobs:
               #    - ...
               block_re = re.compile(
                   r"^###\s*(\d{4}-\d{2}-\d{2})\s*$\n"       # date header
-                  r"((?:^\-\s+.*$\n?)*)",                   # bullets (0+ lines)
+                  r"((?:^\-\s+.*$\n?)*)",                     # bullets (0+ lines)
                   re.MULTILINE
               )
 
