@@ -362,6 +362,14 @@ def parse_w3c_ed_draft(url: str) -> Tuple[Optional[str], Optional[str]]:
         or extract_first(r"\bv([0-9]+(\.[0-9]+){1,2})\b", title, re.IGNORECASE)
     )
 
+    # 2) ✅ 추가: "1.1"처럼 v가 없는 형태도 허용 (연도/날짜 오탐 방지 위해 점(.) 기반 semver만)
+    if not ver:
+        # h1/title에 보통 "… 1.1" 형태로 들어가므로 여기서만 제한적으로 탐지
+        ver = (
+            extract_first(r"\b([0-9]{1,2}\.[0-9]{1,2}(?:\.[0-9]{1,2})?)\b", h1txt)
+            or extract_first(r"\b([0-9]{1,2}\.[0-9]{1,2}(?:\.[0-9]{1,2})?)\b", title)
+        )
+
     dt: Optional[str] = None
     meta_keys = {"dcterms.modified", "dcterms.issued", "dc.date", "dc.modified", "last-modified"}
     for m in soup.find_all("meta"):
