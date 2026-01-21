@@ -20,38 +20,23 @@ standards.csv를 Source of Truth로 사용해 Stable/Draft 버전과 링크를 �
 - 열화 방지:
   - 기존 값이 더 구체적이면(날짜/식별자 포함) 덜 구체적인 값으로 덮어쓰지 않음
 - 핵심 변경 내용 컬럼 기록 규칙(A안):
-  - 버전 값이 변경된 경우에만 기록한다. (링크만 변경된 경우 기록하지 않음)
+  - 버전 값 변경 시에만 기록한다. (링크만 변경된 경우 기록하지 않음)
   - 형식 고정:
-    * Stable 버전 변경 시:  "stable <old> -> <new>"
-    * Draft 버전 변경 시:   "draft <old> -> <new>"
-    * 둘 다 변경 시:         "stable <old> -> <new>; draft <old> -> <new>"
-  - <old>, <new>는 CSV의 Stable Version / Draft Version 값(문자열) 그대로 사용하되,
-    비어있거나 null 계열이면 "N/A"로 표준화한다.
-  - 버전이 변경되지 않았으면 ‘핵심 변경 내용’은 기존 값을 유지한다. (빈 값으로 덮어쓰지 않는다.)
+    * Stable: "stable <old> -> <new>"
+    * Draft:  "draft <old> -> <new>"
+    * 둘 다: "stable ...; draft ..."
+  - <old>, <new>는 CSV 문자열 그대로 사용하되 비어있으면 N/A로 표준화
+  - 버전 변경이 없으면 ‘핵심 변경 내용’은 기존 값을 유지(덮어쓰지 않음)
 - README 변경내역:
   - append-only + 최신이 최상단 (## 변경 내역 바로 아래)
 
-지원 파서(링크가 있을 때만; 일부 HL은 stable 페이지에서 draft 링크를 발견 가능):
-- W3C TR (Stable/Draft): 상태 + 버전
-  - ✅ 개선: SOTD/상태 탐지 대소문자/공백 변화에 더 강하게
-  - ✅ 개선: 상태를 못 잡아도 버전만 확인되면 "vX.Y (W3C TR)"로 최소 기록
-- W3C Editor’s Draft(w3c.github.io): 버전/날짜(안전 추출) + (추가) HTTP Last-Modified fallback
-- IETF RFC(Stable)
-- IETF Internet-Draft(datatracker 페이지에서 최신 -NN 추출)
-- OIDF(openid.net/specs) Stable: 버전 + Status/Published
-- ISO(iso.org/standard) Stable: Publication date 보강
-- EU(eudi.dev) Stable: URL semver
-- HL(AnonCreds) Stable:
-  - HTML redirect(meta refresh/JS/link) 추적 후 실제 스펙 페이지 파싱
-  - "This version (v1.0)" / "Specification Status: vX.Y"에서 vX.Y 추출
-- HL(AnonCreds) Draft(발견형):
-  - spec 페이지의 "Latest Draft" 링크가 GitHub repo일 경우,
-  - GitHub commits 페이지에서 최신 커밋 날짜(YYYY-MM-DD)를 식별자로 사용
+추가: Content snapshot/diff (monitor.py 스타일)
+- 매 실행마다 Stable/Draft 링크에 대해 "내용 변경 체크"는 수행한다.
+- 단, 파일 변경 정책:
+  - 첫 실행(스냅샷 없음): baseline만 저장 (diff 파일 생성/README 기록 안 함)
+  - 내용 동일: 아무 파일도 변경하지 않음 (불필요 커밋 방지)
+  - 내용 변경: diff 파일 생성 + 스냅샷 갱신 + README 기록
 
-추가 안전장치:
-- W3C did-1.1에서 Recommendation 오탐 방지:
-  - SOTD 근처를 우선 탐지
-  - experimental / DO NOT implement 감지 시 Recommendation이면 무효 처리(업데이트 하지 않음)
 """
 
 from __future__ import annotations
@@ -62,10 +47,10 @@ import re
 import sys
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple
-from zoneinfo import ZoneInfo
 from email.utils import parsedate_to_datetime
-from urllib.parse import urljoin
+from typing import Dict, List, Optional, Tuple
+from urllib.parse import urljoin, urlparse
+from zoneinfo import ZoneInfo
 
 import requests
 from bs4 import BeautifulSoup
@@ -81,11 +66,131 @@ ALLOWED_UPDATE_COLS = {
     "Stable Version Link",
     "Draft Version",
     "Draft Version Link",
-    "핵심 변경 내용",  # ✅ 추가 (버전 변경 시에만 기록)
+    "핵심 변경 내용",
 }
 
 # =========================
-# Utils
+# Content snapshot / diff (monitor.py style)
+# =========================
+
+LOG_ROOT = os.path.join(ROOT, "logs")
+SNAPSHOT_DIR = os.path.join(LOG_ROOT, "snapshots")
+DIFF_DIR = os.path.join(LOG_ROOT, "diffs")
+
+
+def ensure_dirs() -> None:
+    os.makedirs(SNAPSHOT_DIR, exist_ok=True)
+    os.makedirs(DIFF_DIR, exist_ok=True)
+
+
+def url_to_safe_filename(url: str) -> str:
+    """
+    URL → 파일명(도메인+경로 기반, 안전 문자만)
+    """
+    parsed = urlparse(url)
+    clean_path = re.sub(r"[^a-zA-Z0-9]", "_", (parsed.netloc or "") + (parsed.path or ""))
+    if not clean_path:
+        clean_path = re.sub(r"[^a-zA-Z0-9]", "_", url)
+    return clean_path[:200]
+
+
+def fetch_page_lines_for_diff(url: str) -> List[str]:
+    """
+    HTML <body> 텍스트를 줄 단위로 추출해 비교 가능한 형태로 정규화
+    """
+    html = http_get(url)
+    soup = soup_from_html(html)
+
+    body = soup.body
+    if body is None:
+        text = soup.get_text(separator="\n", strip=True)
+    else:
+        text = body.get_text(separator="\n", strip=True)
+
+    lines: List[str] = []
+    for line in text.splitlines():
+        s = line.strip()
+        if not s:
+            continue
+        lines.append(s)
+    return lines
+
+
+def load_snapshot_lines(path: str) -> List[str]:
+    if not os.path.exists(path):
+        return []
+    with open(path, "r", encoding="utf-8") as f:
+        return [line.rstrip("\n") for line in f.readlines()]
+
+
+def save_snapshot_lines(path: str, lines: List[str]) -> None:
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        for line in lines:
+            f.write(line + "\n")
+    os.replace(tmp, path)
+
+
+def make_unified_diff(prev_lines: List[str], cur_lines: List[str]) -> str:
+    import difflib
+
+    diff = difflib.unified_diff(prev_lines, cur_lines, lineterm="")
+    return "\n".join(diff).strip()
+
+
+def safe_write_text(path: str, content: str) -> None:
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(content)
+    os.replace(tmp, path)
+
+
+def check_and_record_content_change(url: str) -> Tuple[str, Optional[str]]:
+    """
+    반환:
+      - ("baseline", None): 이전 스냅샷이 없어 베이스라인만 생성 (diff 생성/README 기록 안 함)
+      - ("unchanged", None): 이전 스냅샷과 동일 (파일 변경 없음)
+      - ("changed", diff_relpath): 실제 변경 감지 → diff 생성 + 스냅샷 갱신
+
+    정책:
+      - 내용 동일이면 스냅샷 파일도 건드리지 않는다(불필요 커밋 방지)
+      - 첫 실행은 스냅샷만 만들고 diff는 만들지 않는다(초기 전체 diff 폭발 방지)
+    """
+    ensure_dirs()
+
+    safe = url_to_safe_filename(url)
+    snapshot_path = os.path.join(SNAPSHOT_DIR, f"{safe}.txt")
+
+    prev = load_snapshot_lines(snapshot_path)
+    cur = fetch_page_lines_for_diff(url)
+
+    if prev == cur:
+        return "unchanged", None
+
+    if not prev:
+        save_snapshot_lines(snapshot_path, cur)
+        return "baseline", None
+
+    diff_text = make_unified_diff(prev, cur)
+
+    # 변경이 있으므로 스냅샷 갱신
+    save_snapshot_lines(snapshot_path, cur)
+
+    ts = datetime.now(KST).strftime("%Y%m%d-%H%M%S")
+    diff_filename = f"{safe}__{ts}.diff"
+    diff_path = os.path.join(DIFF_DIR, diff_filename)
+
+    if diff_text:
+        safe_write_text(diff_path, diff_text + "\n")
+        diff_rel = os.path.relpath(diff_path, ROOT)
+        return "changed", diff_rel
+
+    # 이론상 거의 없지만 안전 처리
+    return "changed", None
+
+
+# =========================
+# Utils (general)
 # =========================
 
 def norm_na(v: Optional[str]) -> str:
@@ -98,21 +203,19 @@ def norm_na(v: Optional[str]) -> str:
         return "N/A"
     return s
 
+
 def is_na(v: Optional[str]) -> bool:
     return norm_na(v) == "N/A"
 
+
 def soup_from_html(html: str) -> BeautifulSoup:
     return BeautifulSoup(html, "lxml")
+
 
 def extract_first(regex: str, text: str, flags=0) -> Optional[str]:
     m = re.search(regex, text, flags)
     return m.group(1) if m else None
 
-def safe_write_text(path: str, content: str) -> None:
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        f.write(content)
-    os.replace(tmp, path)
 
 def has_identifier(s: str) -> bool:
     if not s:
@@ -124,6 +227,7 @@ def has_identifier(s: str) -> bool:
     if re.search(r"\bdraft-[a-z0-9-]+-\d{1,2}\b", s, re.IGNORECASE):
         return True
     return False
+
 
 def specificity_score(s: str) -> int:
     s = norm_na(s)
@@ -141,6 +245,7 @@ def specificity_score(s: str) -> int:
     score += min(len(s), 200) // 20
     return score
 
+
 def choose_value_no_degrade(current: str, candidate: str) -> str:
     cur = norm_na(current)
     cand = norm_na(candidate)
@@ -150,6 +255,7 @@ def choose_value_no_degrade(current: str, candidate: str) -> str:
         return cand
     return cand if specificity_score(cand) >= specificity_score(cur) else cur
 
+
 def choose_link_seed_protected(current: str, candidate: str) -> str:
     cur = norm_na(current)
     cand = norm_na(candidate)
@@ -157,16 +263,12 @@ def choose_link_seed_protected(current: str, candidate: str) -> str:
         return cur
     return cand
 
+
 def compute_core_change(before_row: Dict[str, str], after_row: Dict[str, str]) -> Optional[str]:
     """
     '핵심 변경 내용' 자동 기록 규칙(A안):
     - 버전 값(Stable Version / Draft Version)이 변경된 경우에만 기록
     - 링크만 변경된 경우 기록하지 않음(기존 값 유지)
-    - 포맷 고정:
-      * stable <old> -> <new>
-      * draft <old> -> <new>
-      * 둘 다: stable ...; draft ...
-    - old/new는 CSV 문자열 그대로 사용하되, 비어있으면 N/A로 표준화
     """
     b_stable = norm_na(before_row.get("Stable Version"))
     a_stable = norm_na(after_row.get("Stable Version"))
@@ -184,11 +286,12 @@ def compute_core_change(before_row: Dict[str, str], after_row: Dict[str, str]) -
         return None
     return "; ".join(parts)
 
+
 def _extract_html_redirect_target(base_url: str, html: str) -> Optional[str]:
     """
     HTTP 30x가 아닌, HTML(meta refresh / JS / 링크) 기반 redirect를 추적하기 위한 target 추출.
     """
-    # meta refresh: <meta http-equiv="refresh" content="0; url=...">
+    # meta refresh
     m = re.search(
         r'<meta[^>]+http-equiv=["\']?refresh["\']?[^>]+content=["\']?[^"\']*url\s*=\s*([^"\'>\s;]+)',
         html,
@@ -197,19 +300,18 @@ def _extract_html_redirect_target(base_url: str, html: str) -> Optional[str]:
     if m:
         return urljoin(base_url, m.group(1).strip())
 
-    # JS redirect: window.location = "..."
+    # JS redirect
     m = re.search(r'window\.location(?:\.href)?\s*=\s*["\']([^"\']+)["\']', html, re.IGNORECASE)
     if m:
         return urljoin(base_url, m.group(1).strip())
 
-    # "Redirecting" 페이지: 첫 번째 유의미한 링크를 target 후보로 사용
+    # "Redirecting" 페이지: 첫 번째 유의미한 링크
     if re.search(r"\bRedirecting\b", html, re.IGNORECASE):
         soup = soup_from_html(html)
         for a in soup.find_all("a", href=True):
             href = (a.get("href") or "").strip()
-            if not href:
-                continue
-            return urljoin(base_url, href)
+            if href:
+                return urljoin(base_url, href)
 
     # rel=canonical
     soup = soup_from_html(html)
@@ -219,6 +321,7 @@ def _extract_html_redirect_target(base_url: str, html: str) -> Optional[str]:
 
     return None
 
+
 def http_get(
     url: str,
     timeout: int = 25,
@@ -227,7 +330,7 @@ def http_get(
 ):
     """
     - HTTP redirect는 requests가 처리(allow_redirects=True)
-    - HTML 기반 redirect(meta refresh/JS/link)도 1~2 hop까지 수동 추적
+    - HTML 기반 redirect(meta refresh/JS/link)도 최대 2 hop까지 수동 추적
     """
     headers = {
         "User-Agent": "standards-version-tracker-bot/1.0 (+https://github.com/yoongyu-lee/standards-version-tracker)"
@@ -260,6 +363,7 @@ def http_get(
         return text, final_url
     return text
 
+
 # =========================
 # Data model
 # =========================
@@ -271,6 +375,7 @@ class RowUpdate:
     draft_version: Optional[str] = None
     draft_link: Optional[str] = None
 
+
 # =========================
 # Parsers
 # =========================
@@ -281,12 +386,14 @@ MONTHS = {
     "september": "09", "october": "10", "november": "11", "december": "12",
 }
 
+
 def parse_w3c_tr_version_from_url(url: str) -> Optional[str]:
     return extract_first(r"/[a-z0-9\-]+-([0-9]+\.[0-9]+(\.[0-9]+)?)\/?$", url, re.IGNORECASE)
 
+
 def w3c_extract_sotd_window_text(soup: BeautifulSoup) -> str:
     """
-    ✅ 개선: "Status of This Document" 탐지를 대소문자 무시 + 공백 변화에 강하게
+    "Status of This Document" 근처를 우선 탐지(대소문자/공백 변화에 강하게)
     """
     body_text = soup.get_text("\n", strip=True)
     lines = body_text.splitlines()
@@ -296,6 +403,7 @@ def w3c_extract_sotd_window_text(soup: BeautifulSoup) -> str:
             end = min(len(lines), i + 250)
             return "\n".join(lines[start:end])
     return body_text
+
 
 def parse_w3c_tr_stable(url: str) -> Tuple[Optional[str], Optional[str]]:
     html = http_get(url)
@@ -317,7 +425,6 @@ def parse_w3c_tr_stable(url: str) -> Tuple[Optional[str], Optional[str]]:
 
     window = w3c_extract_sotd_window_text(soup)
 
-    # ✅ 개선: 상태 매칭을 케이스 인센서티브로
     status = None
     window_l = window.lower()
     for k, v in status_map.items():
@@ -325,7 +432,7 @@ def parse_w3c_tr_stable(url: str) -> Tuple[Optional[str], Optional[str]]:
             status = v
             break
 
-    # 안전장치: did-1.1 Recommendation 오탐 방지
+    # did-1.1 Recommendation 오탐 방지(규칙 유지)
     if "did-1.1" in url and re.search(r"\bexperimental\b|DO NOT implement", window, re.IGNORECASE):
         if status == "Recommendation":
             status = None
@@ -342,12 +449,12 @@ def parse_w3c_tr_stable(url: str) -> Tuple[Optional[str], Optional[str]]:
             or extract_first(r"\b([0-9]+\.[0-9]+(\.[0-9]+)?)\b", title)
         )
 
-    # ✅ 개선: 상태까지 잡히면 기존 포맷 유지, 상태를 못 잡아도 버전만 잡히면 최소 기록
     if ver and status:
         return f"v{ver} ({status})", url
     if ver:
         return f"v{ver} (W3C TR)", url
     return None, None
+
 
 def parse_w3c_ed_draft(url: str) -> Tuple[Optional[str], Optional[str]]:
     html, headers = http_get(url, return_headers=True)
@@ -362,9 +469,8 @@ def parse_w3c_ed_draft(url: str) -> Tuple[Optional[str], Optional[str]]:
         or extract_first(r"\bv([0-9]+(\.[0-9]+){1,2})\b", title, re.IGNORECASE)
     )
 
-    # 2) ✅ 추가: "1.1"처럼 v가 없는 형태도 허용 (연도/날짜 오탐 방지 위해 점(.) 기반 semver만)
+    # "1.1" 형태도 제한적으로 허용
     if not ver:
-        # h1/title에 보통 "… 1.1" 형태로 들어가므로 여기서만 제한적으로 탐지
         ver = (
             extract_first(r"\b([0-9]{1,2}\.[0-9]{1,2}(?:\.[0-9]{1,2})?)\b", h1txt)
             or extract_first(r"\b([0-9]{1,2}\.[0-9]{1,2}(?:\.[0-9]{1,2})?)\b", title)
@@ -425,6 +531,7 @@ def parse_w3c_ed_draft(url: str) -> Tuple[Optional[str], Optional[str]]:
         return f"v{ver} (Editor's Draft)", url
     return None, None
 
+
 def parse_rfc_from_link_or_page(url: str) -> Tuple[Optional[str], Optional[str]]:
     rfc = extract_first(r"\brfc(\d{3,5})\b", url, re.IGNORECASE)
     if rfc:
@@ -440,6 +547,7 @@ def parse_rfc_from_link_or_page(url: str) -> Tuple[Optional[str], Optional[str]]
         return f"RFC {rfc2}", url
     return None, None
 
+
 def parse_ietf_draft_from_datatracker(url: str) -> Tuple[Optional[str], Optional[str]]:
     html = http_get(url)
     draft_id = extract_first(r"\b(draft-[a-z0-9-]+-\d{1,2})\b", html, re.IGNORECASE)
@@ -447,8 +555,10 @@ def parse_ietf_draft_from_datatracker(url: str) -> Tuple[Optional[str], Optional
         return None, None
     return f"{draft_id} (Internet-Draft)", url
 
+
 def parse_semver_from_url(url: str) -> Optional[str]:
     return extract_first(r"/(\d+\.\d+\.\d+)(/|$)", url)
+
 
 def parse_oidf_spec_stable(url: str) -> Tuple[Optional[str], Optional[str]]:
     html = http_get(url)
@@ -487,6 +597,7 @@ def parse_oidf_spec_stable(url: str) -> Tuple[Optional[str], Optional[str]]:
         return f"{ver} ({pub_iso})", url
     return f"{ver}", url
 
+
 def parse_iso_stable(url: str) -> Tuple[Optional[str], Optional[str]]:
     html = http_get(url)
     soup = soup_from_html(html)
@@ -505,11 +616,10 @@ def parse_iso_stable(url: str) -> Tuple[Optional[str], Optional[str]]:
 
     return None, None
 
+
 def parse_github_latest_commit_date(repo_url: str) -> Optional[str]:
     """
-    GitHub repo에서 최신 커밋 날짜를 YYYY-MM-DD로 추출.
-    - API 없이 commits 페이지 HTML에서 relative-time datetime 파싱
-    - branch가 main/master 다를 수 있어 여러 경로 시도
+    GitHub commits 페이지 HTML에서 최신 커밋 날짜(YYYY-MM-DD) 추출 (API 미사용)
     """
     repo_url = repo_url.rstrip("/")
     candidates = [
@@ -533,16 +643,15 @@ def parse_github_latest_commit_date(repo_url: str) -> Optional[str]:
 
     return None
 
+
 def parse_hl_anoncreds_page(url: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
     """
-    HL AnonCreds spec 페이지에서
+    HL AnonCreds spec 페이지에서:
     - stable 버전 후보: "This version (vX.Y)" 또는 "Specification Status: vX.Y ..."
-    - latest draft 링크: 본문 링크 중 GitHub repo(anoncreds/anoncreds-spec)를 발견
-    - HTML redirect는 http_get()에서 이미 처리됨
+    - latest draft 링크 후보: GitHub repo(anoncreds/anoncreds-spec) 링크 발견
     """
     html, final_url = http_get(url, return_final_url=True)
     soup = soup_from_html(html)
-
     text_one_line = soup.get_text(" ", strip=True)
 
     v_this = extract_first(
@@ -573,15 +682,17 @@ def parse_hl_anoncreds_page(url: str) -> Tuple[Optional[str], Optional[str], Opt
 
     return stable_ver, final_url, latest_draft_link
 
+
 def parse_hl_anoncreds_stable(url: str) -> Tuple[Optional[str], Optional[str]]:
     stable_ver, final_url, _latest = parse_hl_anoncreds_page(url)
     if stable_ver:
         return stable_ver, final_url
     return None, None
 
+
 def discover_hl_anoncreds_draft_from_stable(url: str) -> Tuple[Optional[str], Optional[str]]:
     """
-    Draft Link가 N/A여도 HL spec 페이지에서 Latest Draft repo를 발견하면 Draft로 기록.
+    Draft 링크가 N/A여도 stable 페이지에서 GitHub repo를 발견하면 Draft로 기록.
     Draft Version은 YYYY-MM-DD (GitHub Draft) 형태로 작성(식별자 규칙 충족).
     """
     _stable_ver, _final_url, latest_draft_link = parse_hl_anoncreds_page(url)
@@ -593,6 +704,7 @@ def discover_hl_anoncreds_draft_from_stable(url: str) -> Tuple[Optional[str], Op
         return f"{dt} (GitHub Draft)", latest_draft_link
 
     return None, None
+
 
 # =========================
 # Routing
@@ -645,10 +757,8 @@ def compute_update_for_row(org: str, spec_name: str, stable_link: str, draft_lin
                 if v and l:
                     upd.stable_version, upd.stable_link = v, l
 
-            else:
-                pass
-
         except Exception:
+            # 운영상: 추정 금지, 실패 시 기존값 유지
             pass
 
     # --- Draft ---
@@ -674,13 +784,10 @@ def compute_update_for_row(org: str, spec_name: str, stable_link: str, draft_lin
                 if ver:
                     upd.draft_version, upd.draft_link = f"v{ver} (Draft)", draft_link_n
 
-            else:
-                pass
-
         except Exception:
             pass
     else:
-        # ✅ Draft 링크가 N/A여도 HL은 stable 페이지에서 Latest Draft 발견 가능
+        # Draft 링크가 N/A여도 HL은 stable 페이지에서 Latest Draft 발견 가능
         if org == "HL" and not is_na(stable_link_n):
             try:
                 dv, dl = discover_hl_anoncreds_draft_from_stable(stable_link_n)
@@ -690,6 +797,7 @@ def compute_update_for_row(org: str, spec_name: str, stable_link: str, draft_lin
                 pass
 
     return upd
+
 
 # =========================
 # Validator / Finalizer
@@ -737,6 +845,7 @@ def validate_and_finalize(existing: Dict[str, str], upd: RowUpdate) -> RowUpdate
         draft_link=new_draft_l,
     )
 
+
 # =========================
 # CSV / README Update
 # =========================
@@ -750,6 +859,7 @@ def load_csv_rows(path: str) -> Tuple[List[str], List[Dict[str, str]]]:
             rows.append({k: (v if v is not None else "") for k, v in r.items()})
         return fieldnames, rows
 
+
 def write_csv_rows(path: str, fieldnames: List[str], rows: List[Dict[str, str]]) -> None:
     with open(path, "w", encoding="utf-8", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -757,8 +867,12 @@ def write_csv_rows(path: str, fieldnames: List[str], rows: List[Dict[str, str]])
         for r in rows:
             writer.writerow(r)
 
-def update_readme_changelog(diffs_by_row: List[Tuple[str, str, List[str]]]) -> None:
-    if not diffs_by_row:
+
+def update_readme_changelog(
+    diffs_by_row: List[Tuple[str, str, List[str]]],
+    content_changes_by_row: List[Tuple[str, str, List[str]]],
+) -> None:
+    if not diffs_by_row and not content_changes_by_row:
         return
     if not os.path.exists(README_PATH):
         return
@@ -770,11 +884,16 @@ def update_readme_changelog(diffs_by_row: List[Tuple[str, str, List[str]]]) -> N
         return
 
     today = datetime.now(KST).strftime("%Y-%m-%d")
-
     lines = [f"### {today}"]
+
     for org, name, diffs in diffs_by_row:
         joined = "; ".join(diffs)
         lines.append(f"- [{org}] {name}: {joined}")
+
+    for org, name, diffs in content_changes_by_row:
+        joined = "; ".join(diffs)
+        lines.append(f"- [{org}] {name}: {joined}")
+
     block = "\n".join(lines) + "\n\n"
 
     after_heading_pos = readme.find("\n", idx)
@@ -785,11 +904,14 @@ def update_readme_changelog(diffs_by_row: List[Tuple[str, str, List[str]]]) -> N
     new_readme = readme[:after_heading_pos] + "\n" + block + readme[after_heading_pos:]
     safe_write_text(README_PATH, new_readme)
 
+
 # =========================
 # Main
 # =========================
 
 def main() -> int:
+    ensure_dirs()
+
     if not os.path.exists(CSV_PATH):
         print(f"[ERROR] standards.csv not found at {CSV_PATH}", file=sys.stderr)
         return 2
@@ -802,7 +924,10 @@ def main() -> int:
         return 2
 
     changed_any = False
+    csv_changed_any = False
+
     diffs_for_readme: List[Tuple[str, str, List[str]]] = []
+    content_changes_for_readme: List[Tuple[str, str, List[str]]] = []
 
     for row in rows:
         org = row.get("단체", "").strip()
@@ -813,23 +938,54 @@ def main() -> int:
         stable_link = row.get("Stable Version Link", "")
         draft_link = row.get("Draft Version Link", "")
 
+        # ✅ 항상 내용 변경 체크(단, 파일 변경은 baseline/changed일 때만 발생)
+        content_notes: List[str] = []
+        logs_changed = False
+
+        stable_url = norm_na(stable_link)
+        if not is_na(stable_url):
+            try:
+                status, diff_rel = check_and_record_content_change(stable_url)
+                if status in ("baseline", "changed"):
+                    logs_changed = True
+                if status == "changed" and diff_rel:
+                    content_notes.append(f"내용 변경 감지(버전 동일) – stable diff: {diff_rel}")
+            except Exception as e:
+                print("[WARN] stable content snapshot failed:", stable_url, "err=", repr(e))
+
+        draft_url = norm_na(draft_link)
+        if not is_na(draft_url):
+            try:
+                status, diff_rel = check_and_record_content_change(draft_url)
+                if status in ("baseline", "changed"):
+                    logs_changed = True
+                if status == "changed" and diff_rel:
+                    content_notes.append(f"내용 변경 감지(버전 동일) – draft diff: {diff_rel}")
+            except Exception as e:
+                print("[WARN] draft content snapshot failed:", draft_url, "err=", repr(e))
+
+        if content_notes:
+            content_changes_for_readme.append((org, name, content_notes))
+
+        if logs_changed:
+            changed_any = True
+
+        # --- 기존 버전/링크 자동 갱신 로직 ---
         upd_raw = compute_update_for_row(org, name, stable_link, draft_link)
         upd = validate_and_finalize(before_raw, upd_raw)
 
-        # 1) 4개 핵심 컬럼 업데이트
         row["Stable Version"] = norm_na(upd.stable_version)
         row["Stable Version Link"] = norm_na(upd.stable_link)
         row["Draft Version"] = norm_na(upd.draft_version)
         row["Draft Version Link"] = norm_na(upd.draft_link)
 
-        # 2) ✅ 핵심 변경 내용: 버전 변경 시에만 기록, 아니면 기존 값 유지
+        # 핵심 변경 내용: 버전 변경 시에만 기록
         if "핵심 변경 내용" in fieldnames:
             core = compute_core_change(before_raw, row)
             if core is not None:
                 row["핵심 변경 내용"] = core
-            # else: 버전 변경이 없으면 절대 덮어쓰지 않음(기존 값 유지)
 
-        # 3) README diff는 기존대로 4개 컬럼만 (중복 기록 방지)
+        # README diff는 4개 컬럼만
         diffs: List[str] = []
         for col in ["Stable Version", "Stable Version Link", "Draft Version", "Draft Version Link"]:
             b = (before_raw.get(col, "") or "").strip()
@@ -837,7 +993,6 @@ def main() -> int:
             if b != a:
                 diffs.append(f"{col}: {b or '(empty)'} → {a}")
 
-        # 4) CSV 실제 변경 여부 판단:
         core_changed = False
         if "핵심 변경 내용" in fieldnames:
             b_core = (before_raw.get("핵심 변경 내용", "") or "").strip()
@@ -846,20 +1001,25 @@ def main() -> int:
 
         if diffs or core_changed:
             changed_any = True
+            csv_changed_any = True
             if diffs:
                 diffs_for_readme.append((org, name, diffs))
-            else:
-                # (거의 발생하지 않지만) 핵심 변경 내용만 바뀐 경우 README는 업데이트하지 않음
-                pass
 
     if changed_any:
-        write_csv_rows(CSV_PATH, fieldnames, rows)
-        update_readme_changelog(diffs_for_readme)
-        print(f"[OK] Updated standards.csv and README.md with {len(diffs_for_readme)} changed rows.")
+        if csv_changed_any:
+            write_csv_rows(CSV_PATH, fieldnames, rows)
+
+        update_readme_changelog(diffs_for_readme, content_changes_for_readme)
+
+        print(
+            "[OK] Updated artifacts. "
+            f"csv_row_changes={len(diffs_for_readme)}, content_only_changes={len(content_changes_for_readme)}"
+        )
     else:
         print("[OK] No changes detected.")
 
     return 0
+
 
 if __name__ == "__main__":
     raise SystemExit(main())
