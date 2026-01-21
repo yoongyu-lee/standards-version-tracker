@@ -26,14 +26,39 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r scripts/requirements.txt
 
+      # ✅ snapshots 캐시 복원 (baseline 반복 방지의 핵심)
+      - name: Restore snapshots cache
+        uses: actions/cache@v4
+        with:
+          path: logs/snapshots
+          key: svt-snapshots-${{ github.ref_name }}
+          restore-keys: |
+            svt-snapshots-
+
       - name: Run updater
         run: |
           python scripts/update_standards.py
+        env:
+          # ✅ baseline에서도 diff 생성
+          SVT_BASELINE_DIFF: "1"
+          # (선택) 디버깅 상세 로그가 필요하면 1로
+          # SVT_DEBUG: "1"
+
+      # ✅ run 로그/디프/스냅샷을 artifact로 보관 (repo를 더럽히지 않으면서도 추적 가능)
+      - name: Upload logs artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: svt-logs-${{ github.run_id }}
+          path: logs
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Commit & push if changed
         run: |
+          # tracked 파일(CSV/README) 변경 없으면 커밋 안 함
           if git diff --quiet; then
-            echo "No changes."
+            echo "No tracked changes (standards.csv/README.md)."
             exit 0
           fi
 
