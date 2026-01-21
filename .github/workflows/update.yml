@@ -15,11 +15,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: "pip"
 
       - name: Install deps
         run: |
@@ -31,15 +34,15 @@ jobs:
         uses: actions/cache@v4
         with:
           path: logs/snapshots
-          key: svt-snapshots-${{ github.ref_name }}
+          key: svt-snapshots-${{ github.repository }}-${{ github.ref_name }}
           restore-keys: |
-            svt-snapshots-
+            svt-snapshots-${{ github.repository }}-
 
       - name: Run updater
         run: |
           python scripts/update_standards.py
         env:
-          # ✅ baseline에서도 diff 생성
+          # ✅ baseline에서도 diff 생성 (첫 실행/캐시 미스 시 README에 diff 섹션 생성 가능)
           SVT_BASELINE_DIFF: "1"
           # (선택) 디버깅 상세 로그가 필요하면 1로
           # SVT_DEBUG: "1"
@@ -56,15 +59,17 @@ jobs:
 
       - name: Commit & push if changed
         run: |
-          # tracked 파일(CSV/README) 변경 없으면 커밋 안 함
-          if git diff --quiet; then
-            echo "No tracked changes (standards.csv/README.md)."
-            exit 0
-          fi
-
           git config user.name "standards-bot"
           git config user.email "standards-bot@users.noreply.github.com"
 
-          git add standards.csv README.md
+          # 커밋 대상(Tracked): CSV/README + diff 파일(README에서 바로 열 수 있게)
+          git add standards.csv README.md logs/diffs
+
+          # staged 변경 없으면 종료
+          if git diff --cached --quiet; then
+            echo "No staged changes."
+            exit 0
+          fi
+
           git commit -m "chore: update standards versions"
           git push
