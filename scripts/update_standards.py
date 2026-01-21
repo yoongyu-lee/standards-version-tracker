@@ -4,45 +4,19 @@
 """
 standards.csv를 Source of Truth로 사용해 Stable/Draft 버전과 링크를 자동 갱신한다.
 
-운영 규칙 반영:
-- CSV 구조(컬럼/순서/행 순서) 변경 금지
-- 수정 가능한 컬럼:
-  - Stable Version
-  - Stable Version Link
-  - Draft Version
-  - Draft Version Link
-  - 핵심 변경 내용  ✅ (버전 값 변경 시에만 자동 기록)
-- 추정/추론 금지: 공식 링크에서 확인 가능한 식별자(버전/날짜/draft-id) 없으면 N/A 유지
-- Draft 규칙:
-  - Draft Version Link가 N/A면 Draft Version도 반드시 N/A
-  - Draft Version은 식별자 필수(버전/날짜/draft-id)
-  - (Seed 보호) 버전이 N/A라고 링크를 N/A로 지우지 않음
-- 열화 방지:
-  - 기존 값이 더 구체적이면(날짜/식별자 포함) 덜 구체적인 값으로 덮어쓰지 않음
-- 핵심 변경 내용 컬럼 기록 규칙(A안):
-  - 버전 값 변경 시에만 기록한다. (링크만 변경된 경우 기록하지 않음)
-  - 형식 고정:
-    * Stable: "stable <old> -> <new>"
-    * Draft:  "draft <old> -> <new>"
-    * 둘 다: "stable ...; draft ..."
-  - <old>, <new>는 CSV 문자열 그대로 사용하되 비어있으면 N/A로 표준화
-  - 버전 변경이 없으면 ‘핵심 변경 내용’은 기존 값을 유지(덮어쓰지 않음)
-- README 변경내역:
-  - append-only + 최신이 최상단 (## 변경 내역 바로 아래)
++ (추가) GitHub Actions에서 "파일이 안 생기는" 원인 분석을 위해
+  - STDOUT + 파일 로그 동시 기록
+  - 실행 환경/경로/권한/디렉토리 생성/스냅샷 쓰기/디프 쓰기/requests 호출/예외(traceback) 전부 로깅
+  - 종료 직전에 logs 디렉토리 트리/파일 목록을 요약 출력
 
-추가: Content snapshot/diff (monitor.py 스타일)
-- 매 실행마다 Stable/Draft 링크에 대해 "내용 변경 체크"는 수행한다.
-- 단, 파일 변경 정책:
-  - 첫 실행(스냅샷 없음): baseline만 저장 (diff 파일 생성/README 기록 안 함)
-    * 단, SVT_BASELINE_DIFF=1 이면 baseline에서도 diff 파일 생성(빈 prev 대비)
-  - 내용 동일: 아무 파일도 변경하지 않음 (불필요 커밋 방지)
-  - 내용 변경: diff 파일 생성 + 스냅샷 갱신 + README 기록
+ENV (로깅/디버깅):
+- SVT_DEBUG=1           : DEBUG 레벨 로그
+- SVT_LOG_STDOUT_ONLY=1 : 파일 로그 없이 stdout만 (기본은 파일+stdout)
+- SVT_LOG_FILE=...      : 로그 파일 경로 강제 지정 (기본: LOG_ROOT/run-YYYYmmdd-HHMMSS.log)
 
-GitHub Actions 대응(중요):
-- Actions는 매 실행마다 새 워크스페이스이므로 snapshots가 유지되지 않으면 매번 baseline이 된다.
-- 해결:
-  1) actions/cache로 snapshots 경로를 캐시하고,
-  2) 코드에서는 SVT_SNAPSHOT_DIR / SVT_LOG_ROOT로 그 경로를 지정 가능.
+기존 ENV:
+- SVT_LOG_ROOT, SVT_SNAPSHOT_DIR, SVT_DIFF_DIR
+- SVT_BASELINE_DIFF
 """
 
 from __future__ import annotations
@@ -51,6 +25,8 @@ import csv
 import os
 import re
 import sys
+import traceback
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from email.utils import parsedate_to_datetime
@@ -80,8 +56,6 @@ ALLOWED_UPDATE_COLS = {
 }
 
 # Content snapshot/diff directories
-# - 기본은 repo/logs 아래
-# - Actions에서 snapshots를 캐시하려면 SVT_LOG_ROOT 또는 SVT_SNAPSHOT_DIR로 경로를 고정/오버라이드
 ENV_LOG_ROOT = os.environ.get("SVT_LOG_ROOT", "").strip()
 DEFAULT_LOG_ROOT = os.path.join(ROOT, "logs")
 LOG_ROOT = ENV_LOG_ROOT if ENV_LOG_ROOT else DEFAULT_LOG_ROOT
@@ -95,16 +69,105 @@ DIFF_DIR = ENV_DIFF_DIR if ENV_DIFF_DIR else os.path.join(LOG_ROOT, "diffs")
 # baseline에서도 diff를 만들지 여부 (기본: 0 = 기존 동작 유지)
 BASELINE_DIFF = os.environ.get("SVT_BASELINE_DIFF", "0").strip() in {"1", "true", "TRUE", "yes", "YES"}
 
+# Logging env
+DEBUG_MODE = os.environ.get("SVT_DEBUG", "0").strip() in {"1", "true", "TRUE", "yes", "YES"}
+LOG_STDOUT_ONLY = os.environ.get("SVT_LOG_STDOUT_ONLY", "0").strip() in {"1", "true", "TRUE", "yes", "YES"}
+ENV_LOG_FILE = os.environ.get("SVT_LOG_FILE", "").strip()
+
+logger = logging.getLogger("svt")
+
+
+def _now_kst_ts() -> str:
+    return datetime.now(KST).strftime("%Y%m%d-%H%M%S")
+
+
+def setup_logging() -> str:
+    """
+    stdout + 파일 로깅 동시 설정.
+    returns: log_file_path (stdout only면 빈 문자열)
+    """
+    # 핸들러 중복 방지
+    if logger.handlers:
+        return ""
+
+    logger.setLevel(logging.DEBUG if DEBUG_MODE else logging.INFO)
+    fmt = logging.Formatter(
+        fmt="%(asctime)s [%(levelname)s] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
+    sh = logging.StreamHandler(sys.stdout)
+    sh.setLevel(logging.DEBUG if DEBUG_MODE else logging.INFO)
+    sh.setFormatter(fmt)
+    logger.addHandler(sh)
+
+    log_file_path = ""
+    if not LOG_STDOUT_ONLY:
+        try:
+            os.makedirs(LOG_ROOT, exist_ok=True)
+            if ENV_LOG_FILE:
+                log_file_path = ENV_LOG_FILE
+            else:
+                log_file_path = os.path.join(LOG_ROOT, f"run-{_now_kst_ts()}.log")
+
+            fh = logging.FileHandler(log_file_path, encoding="utf-8")
+            fh.setLevel(logging.DEBUG)
+            fh.setFormatter(fmt)
+            logger.addHandler(fh)
+        except Exception:
+            # 파일 로그가 실패해도 stdout 로그로는 남기기
+            logger.error("Failed to init file logging:\n%s", traceback.format_exc())
+            log_file_path = ""
+
+    logger.info("[BOOT] logger initialized. debug=%s stdout_only=%s log_file=%s",
+                DEBUG_MODE, LOG_STDOUT_ONLY, (log_file_path or "(none)"))
+    return log_file_path
+
 
 def ensure_dirs() -> None:
-    os.makedirs(SNAPSHOT_DIR, exist_ok=True)
-    os.makedirs(DIFF_DIR, exist_ok=True)
+    """
+    스냅샷/디프 디렉토리 생성 + 권한/에러 로깅
+    """
+    try:
+        os.makedirs(SNAPSHOT_DIR, exist_ok=True)
+        os.makedirs(DIFF_DIR, exist_ok=True)
+        logger.debug("[FS] ensure_dirs OK snapshot_dir=%s diff_dir=%s", SNAPSHOT_DIR, DIFF_DIR)
+    except Exception:
+        logger.error("[FS] ensure_dirs FAILED snapshot_dir=%s diff_dir=%s\n%s",
+                     SNAPSHOT_DIR, DIFF_DIR, traceback.format_exc())
+        raise
+
+
+def _list_dir_tree(root: str, max_lines: int = 300) -> List[str]:
+    """
+    디버깅용: 디렉토리 트리를 간단히 나열.
+    너무 길어지지 않도록 라인 제한.
+    """
+    lines: List[str] = []
+    try:
+        if not os.path.exists(root):
+            return [f"(missing) {root}"]
+        for cur, dirs, files in os.walk(root):
+            rel = os.path.relpath(cur, root)
+            lines.append(f"[DIR] {root}/{rel}".replace("\\", "/"))
+            dirs.sort()
+            files.sort()
+            for f in files:
+                p = os.path.join(cur, f)
+                try:
+                    st = os.stat(p)
+                    lines.append(f"  - {f} ({st.st_size} bytes)")
+                except Exception:
+                    lines.append(f"  - {f} (stat failed)")
+            if len(lines) >= max_lines:
+                lines.append(f"... truncated (max_lines={max_lines})")
+                break
+    except Exception:
+        return [f"(walk failed) {root}", traceback.format_exc()]
+    return lines
 
 
 def url_to_safe_filename(url: str) -> str:
-    """
-    URL → 파일명(도메인+경로 기반, 안전 문자만)
-    """
     parsed = urlparse(url)
     clean_path = re.sub(r"[^a-zA-Z0-9]", "_", (parsed.netloc or "") + (parsed.path or ""))
     if not clean_path:
@@ -112,9 +175,76 @@ def url_to_safe_filename(url: str) -> str:
     return clean_path[:200]
 
 
+def soup_from_html(html: str) -> BeautifulSoup:
+    # lxml 미설치/파서 문제도 여기서 터질 수 있으니 로깅
+    try:
+        return BeautifulSoup(html, "lxml")
+    except Exception:
+        logger.error("[PARSE] BeautifulSoup(lxml) failed. Falling back to html.parser.\n%s",
+                     traceback.format_exc())
+        return BeautifulSoup(html, "html.parser")
+
+
+def extract_first(regex: str, text: str, flags=0) -> Optional[str]:
+    m = re.search(regex, text, flags)
+    return m.group(1) if m else None
+
+
+def http_get(
+    url: str,
+    timeout: int = 25,
+    return_headers: bool = False,
+    return_final_url: bool = False,
+):
+    """
+    - HTTP redirect는 requests가 처리(allow_redirects=True)
+    - HTML 기반 redirect(meta refresh/JS/link)도 최대 2 hop까지 수동 추적
+    + (추가) 각 hop마다 status/최종URL/헤더 일부/본문 길이 로깅
+    """
+    headers = {
+        "User-Agent": "standards-version-tracker-bot/1.0 (+https://github.com/yoongyu-lee/standards-version-tracker)"
+    }
+
+    final_url = url
+    last_headers = None
+    text = None
+
+    for hop in range(1, 4):  # 최대 2번 추가 추적(총 3번 fetch)
+        try:
+            logger.debug("[HTTP] GET hop=%d url=%s timeout=%s", hop, final_url, timeout)
+            r = requests.get(final_url, headers=headers, timeout=timeout, allow_redirects=True)
+            logger.debug("[HTTP] RESP hop=%d status=%s final=%s len=%s ct=%s",
+                         hop, r.status_code, r.url, len(r.text or ""), r.headers.get("Content-Type"))
+            r.raise_for_status()
+            text = r.text
+            last_headers = r.headers
+            final_url = r.url
+        except Exception:
+            logger.error("[HTTP] FAILED hop=%d url=%s\n%s", hop, final_url, traceback.format_exc())
+            raise
+
+        target = _extract_html_redirect_target(final_url, text)
+        if target and target != final_url:
+            logger.debug("[HTTP] HTML redirect detected: %s -> %s", final_url, target)
+            final_url = target
+            continue
+        break
+
+    assert text is not None and last_headers is not None
+
+    if return_headers and return_final_url:
+        return text, last_headers, final_url
+    if return_headers:
+        return text, last_headers
+    if return_final_url:
+        return text, final_url
+    return text
+
+
 def fetch_page_lines_for_diff(url: str) -> List[str]:
     """
     HTML <body> 텍스트를 줄 단위로 추출해 비교 가능한 형태로 정규화
+    + (추가) 라인 수 로깅
     """
     html = http_get(url)
     soup = soup_from_html(html)
@@ -131,22 +261,36 @@ def fetch_page_lines_for_diff(url: str) -> List[str]:
         if not s:
             continue
         lines.append(s)
+
+    logger.debug("[DIFF] fetched lines url=%s lines=%d", url, len(lines))
     return lines
 
 
 def load_snapshot_lines(path: str) -> List[str]:
     if not os.path.exists(path):
+        logger.debug("[FS] snapshot missing path=%s", path)
         return []
-    with open(path, "r", encoding="utf-8") as f:
-        return [line.rstrip("\n") for line in f.readlines()]
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            lines = [line.rstrip("\n") for line in f.readlines()]
+        logger.debug("[FS] snapshot loaded path=%s lines=%d", path, len(lines))
+        return lines
+    except Exception:
+        logger.error("[FS] snapshot read FAILED path=%s\n%s", path, traceback.format_exc())
+        raise
 
 
 def save_snapshot_lines(path: str, lines: List[str]) -> None:
     tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        for line in lines:
-            f.write(line + "\n")
-    os.replace(tmp, path)
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            for line in lines:
+                f.write(line + "\n")
+        os.replace(tmp, path)
+        logger.debug("[FS] snapshot saved path=%s lines=%d", path, len(lines))
+    except Exception:
+        logger.error("[FS] snapshot write FAILED path=%s tmp=%s\n%s", path, tmp, traceback.format_exc())
+        raise
 
 
 def make_unified_diff(prev_lines: List[str], cur_lines: List[str]) -> str:
@@ -157,9 +301,14 @@ def make_unified_diff(prev_lines: List[str], cur_lines: List[str]) -> str:
 
 def safe_write_text(path: str, content: str) -> None:
     tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        f.write(content)
-    os.replace(tmp, path)
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(content)
+        os.replace(tmp, path)
+        logger.debug("[FS] file saved path=%s bytes=%d", path, len(content.encode("utf-8", "ignore")))
+    except Exception:
+        logger.error("[FS] file write FAILED path=%s tmp=%s\n%s", path, tmp, traceback.format_exc())
+        raise
 
 
 def _write_diff_file(url: str, prev: List[str], cur: List[str]) -> Optional[str]:
@@ -170,11 +319,13 @@ def _write_diff_file(url: str, prev: List[str], cur: List[str]) -> Optional[str]
     diff_filename = f"{safe}__{ts}.diff"
     diff_path = os.path.join(DIFF_DIR, diff_filename)
 
-    # diff가 빈 문자열일 수 있으니(이론상 거의 없음) 그래도 파일을 만들지 여부는 정책 선택
     if diff_text:
         safe_write_text(diff_path, diff_text + "\n")
-        return os.path.relpath(diff_path, ROOT)
+        rel = os.path.relpath(diff_path, ROOT)
+        logger.info("[DIFF] created url=%s diff=%s", url, rel)
+        return rel
 
+    logger.debug("[DIFF] empty diff url=%s (no file created)", url)
     return None
 
 
@@ -185,11 +336,6 @@ def check_and_record_content_change(url: str) -> Tuple[str, Optional[str]]:
       - ("baseline", diff_relpath): (옵션) SVT_BASELINE_DIFF=1이면 baseline에서도 diff 생성
       - ("unchanged", None): 이전 스냅샷과 동일 (파일 변경 없음)
       - ("changed", diff_relpath): 실제 변경 감지 → diff 생성 + 스냅샷 갱신
-
-    정책:
-      - 내용 동일이면 스냅샷 파일도 건드리지 않는다(불필요 커밋 방지)
-      - 첫 실행은 기본적으로 스냅샷만 만들고 diff는 만들지 않는다(초기 전체 diff 폭발 방지)
-        * 단, SVT_BASELINE_DIFF=1이면 baseline에서도 diff 파일 생성(빈 prev 대비)
     """
     ensure_dirs()
 
@@ -200,10 +346,12 @@ def check_and_record_content_change(url: str) -> Tuple[str, Optional[str]]:
     cur = fetch_page_lines_for_diff(url)
 
     if prev == cur:
+        logger.debug("[DIFF] unchanged url=%s snapshot=%s", url, snapshot_path)
         return "unchanged", None
 
-    # baseline (no previous)
     if not prev:
+        # baseline
+        logger.info("[DIFF] baseline url=%s snapshot=%s (BASELINE_DIFF=%s)", url, snapshot_path, BASELINE_DIFF)
         save_snapshot_lines(snapshot_path, cur)
         if BASELINE_DIFF:
             diff_rel = _write_diff_file(url, [], cur)
@@ -211,11 +359,10 @@ def check_and_record_content_change(url: str) -> Tuple[str, Optional[str]]:
         return "baseline", None
 
     # changed
+    logger.info("[DIFF] changed url=%s snapshot=%s prev_lines=%d cur_lines=%d",
+                url, snapshot_path, len(prev), len(cur))
     diff_rel = _write_diff_file(url, prev, cur)
-
-    # 변경이 있으므로 스냅샷 갱신
     save_snapshot_lines(snapshot_path, cur)
-
     return "changed", diff_rel
 
 
@@ -236,15 +383,6 @@ def norm_na(v: Optional[str]) -> str:
 
 def is_na(v: Optional[str]) -> bool:
     return norm_na(v) == "N/A"
-
-
-def soup_from_html(html: str) -> BeautifulSoup:
-    return BeautifulSoup(html, "lxml")
-
-
-def extract_first(regex: str, text: str, flags=0) -> Optional[str]:
-    m = re.search(regex, text, flags)
-    return m.group(1) if m else None
 
 
 def has_identifier(s: str) -> bool:
@@ -295,14 +433,8 @@ def choose_link_seed_protected(current: str, candidate: str) -> str:
 
 
 def compute_core_change(before_row: Dict[str, str], after_row: Dict[str, str]) -> Optional[str]:
-    """
-    '핵심 변경 내용' 자동 기록 규칙(A안):
-    - 버전 값(Stable Version / Draft Version)이 변경된 경우에만 기록
-    - 링크만 변경된 경우 기록하지 않음(기존 값 유지)
-    """
     b_stable = norm_na(before_row.get("Stable Version"))
     a_stable = norm_na(after_row.get("Stable Version"))
-
     b_draft = norm_na(before_row.get("Draft Version"))
     a_draft = norm_na(after_row.get("Draft Version"))
 
@@ -318,10 +450,6 @@ def compute_core_change(before_row: Dict[str, str], after_row: Dict[str, str]) -
 
 
 def _extract_html_redirect_target(base_url: str, html: str) -> Optional[str]:
-    """
-    HTTP 30x가 아닌, HTML(meta refresh / JS / 링크) 기반 redirect를 추적하기 위한 target 추출.
-    """
-    # meta refresh
     m = re.search(
         r'<meta[^>]+http-equiv=["\']?refresh["\']?[^>]+content=["\']?[^"\']*url\s*=\s*([^"\'>\s;]+)',
         html,
@@ -330,12 +458,10 @@ def _extract_html_redirect_target(base_url: str, html: str) -> Optional[str]:
     if m:
         return urljoin(base_url, m.group(1).strip())
 
-    # JS redirect
     m = re.search(r'window\.location(?:\.href)?\s*=\s*["\']([^"\']+)["\']', html, re.IGNORECASE)
     if m:
         return urljoin(base_url, m.group(1).strip())
 
-    # "Redirecting" 페이지: 첫 번째 유의미한 링크
     if re.search(r"\bRedirecting\b", html, re.IGNORECASE):
         soup = soup_from_html(html)
         for a in soup.find_all("a", href=True):
@@ -343,55 +469,12 @@ def _extract_html_redirect_target(base_url: str, html: str) -> Optional[str]:
             if href:
                 return urljoin(base_url, href)
 
-    # rel=canonical
     soup = soup_from_html(html)
     link = soup.find("link", attrs={"rel": re.compile(r"\bcanonical\b", re.IGNORECASE)})
     if link and link.get("href"):
         return urljoin(base_url, link["href"].strip())
 
     return None
-
-
-def http_get(
-    url: str,
-    timeout: int = 25,
-    return_headers: bool = False,
-    return_final_url: bool = False,
-):
-    """
-    - HTTP redirect는 requests가 처리(allow_redirects=True)
-    - HTML 기반 redirect(meta refresh/JS/link)도 최대 2 hop까지 수동 추적
-    """
-    headers = {
-        "User-Agent": "standards-version-tracker-bot/1.0 (+https://github.com/yoongyu-lee/standards-version-tracker)"
-    }
-
-    final_url = url
-    last_headers = None
-    text = None
-
-    for _ in range(3):  # 최대 2번 추가 추적(총 3번 fetch)
-        r = requests.get(final_url, headers=headers, timeout=timeout, allow_redirects=True)
-        r.raise_for_status()
-        text = r.text
-        last_headers = r.headers
-        final_url = r.url
-
-        target = _extract_html_redirect_target(final_url, text)
-        if target and target != final_url:
-            final_url = target
-            continue
-        break
-
-    assert text is not None and last_headers is not None
-
-    if return_headers and return_final_url:
-        return text, last_headers, final_url
-    if return_headers:
-        return text, last_headers
-    if return_final_url:
-        return text, final_url
-    return text
 
 
 # =========================
@@ -422,9 +505,6 @@ def parse_w3c_tr_version_from_url(url: str) -> Optional[str]:
 
 
 def w3c_extract_sotd_window_text(soup: BeautifulSoup) -> str:
-    """
-    "Status of This Document" 근처를 우선 탐지(대소문자/공백 변화에 강하게)
-    """
     body_text = soup.get_text("\n", strip=True)
     lines = body_text.splitlines()
     for i, line in enumerate(lines):
@@ -462,7 +542,6 @@ def parse_w3c_tr_stable(url: str) -> Tuple[Optional[str], Optional[str]]:
             status = v
             break
 
-    # did-1.1 Recommendation 오탐 방지(규칙 유지)
     if "did-1.1" in url and re.search(r"\bexperimental\b|DO NOT implement", window, re.IGNORECASE):
         if status == "Recommendation":
             status = None
@@ -499,7 +578,6 @@ def parse_w3c_ed_draft(url: str) -> Tuple[Optional[str], Optional[str]]:
         or extract_first(r"\bv([0-9]+(\.[0-9]+){1,2})\b", title, re.IGNORECASE)
     )
 
-    # "1.1" 형태도 제한적으로 허용
     if not ver:
         ver = (
             extract_first(r"\b([0-9]{1,2}\.[0-9]{1,2}(?:\.[0-9]{1,2})?)\b", h1txt)
@@ -648,9 +726,6 @@ def parse_iso_stable(url: str) -> Tuple[Optional[str], Optional[str]]:
 
 
 def parse_github_latest_commit_date(repo_url: str) -> Optional[str]:
-    """
-    GitHub commits 페이지 HTML에서 최신 커밋 날짜(YYYY-MM-DD) 추출 (API 미사용)
-    """
     repo_url = repo_url.rstrip("/")
     candidates = [
         repo_url + "/commits/main/",
@@ -675,11 +750,6 @@ def parse_github_latest_commit_date(repo_url: str) -> Optional[str]:
 
 
 def parse_hl_anoncreds_page(url: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
-    """
-    HL AnonCreds spec 페이지에서:
-    - stable 버전 후보: "This version (vX.Y)" 또는 "Specification Status: vX.Y ..."
-    - latest draft 링크 후보: GitHub repo(anoncreds/anoncreds-spec) 링크 발견
-    """
     html, final_url = http_get(url, return_final_url=True)
     soup = soup_from_html(html)
     text_one_line = soup.get_text(" ", strip=True)
@@ -721,10 +791,6 @@ def parse_hl_anoncreds_stable(url: str) -> Tuple[Optional[str], Optional[str]]:
 
 
 def discover_hl_anoncreds_draft_from_stable(url: str) -> Tuple[Optional[str], Optional[str]]:
-    """
-    Draft 링크가 N/A여도 stable 페이지에서 GitHub repo를 발견하면 Draft로 기록.
-    Draft Version은 YYYY-MM-DD (GitHub Draft) 형태로 작성(식별자 규칙 충족).
-    """
     _stable_ver, _final_url, latest_draft_link = parse_hl_anoncreds_page(url)
     if not latest_draft_link:
         return None, None
@@ -788,8 +854,8 @@ def compute_update_for_row(org: str, spec_name: str, stable_link: str, draft_lin
                     upd.stable_version, upd.stable_link = v, l
 
         except Exception:
-            # 운영상: 추정 금지, 실패 시 기존값 유지
-            pass
+            logger.warning("[ROW] stable parse failed org=%s name=%s url=%s\n%s",
+                           org, spec_name, stable_link_n, traceback.format_exc())
 
     # --- Draft ---
     if not is_na(draft_link_n):
@@ -815,16 +881,17 @@ def compute_update_for_row(org: str, spec_name: str, stable_link: str, draft_lin
                     upd.draft_version, upd.draft_link = f"v{ver} (Draft)", draft_link_n
 
         except Exception:
-            pass
+            logger.warning("[ROW] draft parse failed org=%s name=%s url=%s\n%s",
+                           org, spec_name, draft_link_n, traceback.format_exc())
     else:
-        # Draft 링크가 N/A여도 HL은 stable 페이지에서 Latest Draft 발견 가능
         if org == "HL" and not is_na(stable_link_n):
             try:
                 dv, dl = discover_hl_anoncreds_draft_from_stable(stable_link_n)
                 if dv and dl:
                     upd.draft_version, upd.draft_link = dv, dl
             except Exception:
-                pass
+                logger.warning("[ROW] HL draft discovery failed org=%s name=%s stable_url=%s\n%s",
+                               org, spec_name, stable_link_n, traceback.format_exc())
 
     return upd
 
@@ -844,27 +911,21 @@ def validate_and_finalize(existing: Dict[str, str], upd: RowUpdate) -> RowUpdate
     cand_draft_v = norm_na(upd.draft_version) if upd.draft_version is not None else cur_draft_v
     cand_draft_l = norm_na(upd.draft_link) if upd.draft_link is not None else cur_draft_l
 
-    # 링크는 seed 보호 (N/A로 덮어쓰기 금지)
     new_stable_l = choose_link_seed_protected(cur_stable_l, cand_stable_l)
     new_draft_l = choose_link_seed_protected(cur_draft_l, cand_draft_l)
 
-    # 값은 열화 방지
     new_stable_v = choose_value_no_degrade(cur_stable_v, cand_stable_v)
     new_draft_v = choose_value_no_degrade(cur_draft_v, cand_draft_v)
 
-    # Stable: 링크가 N/A면 버전도 N/A
     if is_na(new_stable_l):
         new_stable_v = "N/A"
 
-    # Draft: 링크가 N/A면 버전도 N/A
     if is_na(new_draft_l):
         new_draft_v = "N/A"
     else:
-        # 링크가 있는데 버전이 식별자 규칙을 만족 못하면 버전만 N/A(링크 유지)
         if is_na(new_draft_v) or not has_identifier(new_draft_v):
             new_draft_v = "N/A"
 
-    # Draft Version을 채우면 Draft Link도 있어야 함
     if not is_na(new_draft_v) and is_na(new_draft_l):
         new_draft_v = "N/A"
 
@@ -940,17 +1001,40 @@ def update_readme_changelog(
 # =========================
 
 def main() -> int:
+    log_file = setup_logging()
+
+    # 실행 환경 덤프 (Actions에서 경로/권한/파이썬/작업폴더 문제를 바로 잡기 위함)
+    try:
+        logger.info("[ENV] cwd=%s", os.getcwd())
+        logger.info("[ENV] script_dir=%s", os.path.dirname(__file__))
+        logger.info("[ENV] ROOT=%s", ROOT)
+        logger.info("[ENV] CSV_PATH=%s exists=%s", CSV_PATH, os.path.exists(CSV_PATH))
+        logger.info("[ENV] README_PATH=%s exists=%s", README_PATH, os.path.exists(README_PATH))
+        logger.info("[ENV] LOG_ROOT=%s SNAPSHOT_DIR=%s DIFF_DIR=%s BASELINE_DIFF=%s",
+                    LOG_ROOT, SNAPSHOT_DIR, DIFF_DIR, BASELINE_DIFF)
+        logger.info("[ENV] python=%s", sys.version.replace("\n", " "))
+        logger.info("[ENV] requests=%s bs4=%s", getattr(requests, "__version__", "unknown"),
+                    getattr(__import__("bs4"), "__version__", "unknown"))
+        # lxml 유무 체크
+        try:
+            import lxml  # noqa
+            logger.info("[ENV] lxml=installed")
+        except Exception:
+            logger.info("[ENV] lxml=NOT installed (will fallback to html.parser)")
+    except Exception:
+        logger.error("[ENV] dump failed\n%s", traceback.format_exc())
+
     ensure_dirs()
 
     if not os.path.exists(CSV_PATH):
-        print(f"[ERROR] standards.csv not found at {CSV_PATH}", file=sys.stderr)
+        logger.error("[ERROR] standards.csv not found at %s", CSV_PATH)
         return 2
 
     fieldnames, rows = load_csv_rows(CSV_PATH)
 
     missing = [c for c in ALLOWED_UPDATE_COLS if c not in fieldnames]
     if missing:
-        print(f"[ERROR] CSV missing expected columns: {missing}", file=sys.stderr)
+        logger.error("[ERROR] CSV missing expected columns: %s", missing)
         return 2
 
     changed_any = False
@@ -959,11 +1043,12 @@ def main() -> int:
     diffs_for_readme: List[Tuple[str, str, List[str]]] = []
     content_changes_for_readme: List[Tuple[str, str, List[str]]] = []
 
-    # content diff 상태 집계 (Actions 디버깅용)
     content_status_counts = {"baseline": 0, "unchanged": 0, "changed": 0}
     content_diff_files = 0
 
-    for row in rows:
+    logger.info("[RUN] rows=%d", len(rows))
+
+    for idx, row in enumerate(rows, start=1):
         org = row.get("단체", "").strip()
         name = row.get("표준명 (항목)", "").strip()
 
@@ -972,7 +1057,10 @@ def main() -> int:
         stable_link = row.get("Stable Version Link", "")
         draft_link = row.get("Draft Version Link", "")
 
-        # ✅ 항상 내용 변경 체크(단, 파일 변경은 baseline/changed일 때만 발생)
+        logger.debug("[ROW] #%d org=%s name=%s stable_link=%s draft_link=%s",
+                     idx, org, name, stable_link, draft_link)
+
+        # ✅ 항상 내용 변경 체크
         content_notes: List[str] = []
         logs_changed = False
 
@@ -996,7 +1084,8 @@ def main() -> int:
                     content_notes.append(f"baseline diff 생성 – stable diff: {diff_rel}")
 
             except Exception as e:
-                print("[WARN] stable content snapshot failed:", stable_url, "err=", repr(e))
+                logger.warning("[WARN] stable content snapshot failed: %s err=%s\n%s",
+                               stable_url, repr(e), traceback.format_exc())
 
         draft_url = norm_na(draft_link)
         if not is_na(draft_url):
@@ -1018,13 +1107,13 @@ def main() -> int:
                     content_notes.append(f"baseline diff 생성 – draft diff: {diff_rel}")
 
             except Exception as e:
-                print("[WARN] draft content snapshot failed:", draft_url, "err=", repr(e))
+                logger.warning("[WARN] draft content snapshot failed: %s err=%s\n%s",
+                               draft_url, repr(e), traceback.format_exc())
 
         if content_notes:
             content_changes_for_readme.append((org, name, content_notes))
 
         if logs_changed:
-            # logs(스냅샷/디프)가 바뀌었을 수도 있음
             changed_any = True
 
         # --- 기존 버전/링크 자동 갱신 로직 ---
@@ -1036,13 +1125,11 @@ def main() -> int:
         row["Draft Version"] = norm_na(upd.draft_version)
         row["Draft Version Link"] = norm_na(upd.draft_link)
 
-        # 핵심 변경 내용: 버전 변경 시에만 기록
         if "핵심 변경 내용" in fieldnames:
             core = compute_core_change(before_raw, row)
             if core is not None:
                 row["핵심 변경 내용"] = core
 
-        # README diff는 4개 컬럼만
         diffs: List[str] = []
         for col in ["Stable Version", "Stable Version Link", "Draft Version", "Draft Version Link"]:
             b = (before_raw.get(col, "") or "").strip()
@@ -1066,25 +1153,40 @@ def main() -> int:
     if changed_any:
         if csv_changed_any:
             write_csv_rows(CSV_PATH, fieldnames, rows)
+            logger.info("[OK] standards.csv updated rows_changed=%d", len(diffs_for_readme))
 
         update_readme_changelog(diffs_for_readme, content_changes_for_readme)
 
-        print(
-            "[OK] Updated artifacts. "
-            f"csv_row_changes={len(diffs_for_readme)}, content_only_changes={len(content_changes_for_readme)}"
-        )
+        logger.info("[OK] Updated artifacts. csv_row_changes=%d content_only_changes=%d",
+                    len(diffs_for_readme), len(content_changes_for_readme))
     else:
-        print("[OK] No changes detected.")
+        logger.info("[OK] No changes detected.")
 
-    # 디버깅 로그 (Actions에서 baseline 반복 여부 확인)
-    print(
-        "[INFO] content_status_counts="
-        f"{content_status_counts}, diff_files_created={content_diff_files}, "
-        f"snapshot_dir={SNAPSHOT_DIR}, diff_dir={DIFF_DIR}, baseline_diff={BASELINE_DIFF}"
-    )
+    # 디버깅 로그: baseline 반복/디렉토리/파일 생성 여부를 최종 확인
+    logger.info("[INFO] content_status_counts=%s diff_files_created=%d snapshot_dir=%s diff_dir=%s baseline_diff=%s",
+                content_status_counts, content_diff_files, SNAPSHOT_DIR, DIFF_DIR, BASELINE_DIFF)
+
+    # 디렉토리 트리 덤프 (Actions에서 “진짜 생성됐는지” 확인)
+    logger.info("[TREE] LOG_ROOT listing:\n%s", "\n".join(_list_dir_tree(LOG_ROOT, max_lines=250)))
+    logger.info("[TREE] SNAPSHOT_DIR listing:\n%s", "\n".join(_list_dir_tree(SNAPSHOT_DIR, max_lines=250)))
+    logger.info("[TREE] DIFF_DIR listing:\n%s", "\n".join(_list_dir_tree(DIFF_DIR, max_lines=250)))
+
+    if log_file:
+        logger.info("[DONE] log_file=%s", log_file)
 
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except SystemExit:
+        raise
+    except Exception:
+        # 최후의 보루: 어떤 예외든 traceback을 남긴다
+        try:
+            setup_logging()
+            logger.critical("[FATAL] uncaught exception\n%s", traceback.format_exc())
+        except Exception:
+            print("[FATAL] uncaught exception (logger init failed)\n" + traceback.format_exc(), file=sys.stderr)
+        raise
