@@ -34,9 +34,15 @@ standards.csv를 Source of Truth로 사용해 Stable/Draft 버전과 링크를 �
 - 매 실행마다 Stable/Draft 링크에 대해 "내용 변경 체크"는 수행한다.
 - 단, 파일 변경 정책:
   - 첫 실행(스냅샷 없음): baseline만 저장 (diff 파일 생성/README 기록 안 함)
+    * 단, SVT_BASELINE_DIFF=1 이면 baseline에서도 diff 파일 생성(빈 prev 대비)
   - 내용 동일: 아무 파일도 변경하지 않음 (불필요 커밋 방지)
   - 내용 변경: diff 파일 생성 + 스냅샷 갱신 + README 기록
 
+GitHub Actions 대응(중요):
+- Actions는 매 실행마다 새 워크스페이스이므로 snapshots가 유지되지 않으면 매번 baseline이 된다.
+- 해결:
+  1) actions/cache로 snapshots 경로를 캐시하고,
+  2) 코드에서는 SVT_SNAPSHOT_DIR / SVT_LOG_ROOT로 그 경로를 지정 가능.
 """
 
 from __future__ import annotations
@@ -55,6 +61,10 @@ from zoneinfo import ZoneInfo
 import requests
 from bs4 import BeautifulSoup
 
+# -------------------------
+# Paths / Env overrides
+# -------------------------
+
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 CSV_PATH = os.path.join(ROOT, "standards.csv")
 README_PATH = os.path.join(ROOT, "README.md")
@@ -69,13 +79,21 @@ ALLOWED_UPDATE_COLS = {
     "핵심 변경 내용",
 }
 
-# =========================
-# Content snapshot / diff (monitor.py style)
-# =========================
+# Content snapshot/diff directories
+# - 기본은 repo/logs 아래
+# - Actions에서 snapshots를 캐시하려면 SVT_LOG_ROOT 또는 SVT_SNAPSHOT_DIR로 경로를 고정/오버라이드
+ENV_LOG_ROOT = os.environ.get("SVT_LOG_ROOT", "").strip()
+DEFAULT_LOG_ROOT = os.path.join(ROOT, "logs")
+LOG_ROOT = ENV_LOG_ROOT if ENV_LOG_ROOT else DEFAULT_LOG_ROOT
 
-LOG_ROOT = os.path.join(ROOT, "logs")
-SNAPSHOT_DIR = os.path.join(LOG_ROOT, "snapshots")
-DIFF_DIR = os.path.join(LOG_ROOT, "diffs")
+ENV_SNAPSHOT_DIR = os.environ.get("SVT_SNAPSHOT_DIR", "").strip()
+ENV_DIFF_DIR = os.environ.get("SVT_DIFF_DIR", "").strip()
+
+SNAPSHOT_DIR = ENV_SNAPSHOT_DIR if ENV_SNAPSHOT_DIR else os.path.join(LOG_ROOT, "snapshots")
+DIFF_DIR = ENV_DIFF_DIR if ENV_DIFF_DIR else os.path.join(LOG_ROOT, "diffs")
+
+# baseline에서도 diff를 만들지 여부 (기본: 0 = 기존 동작 유지)
+BASELINE_DIFF = os.environ.get("SVT_BASELINE_DIFF", "0").strip() in {"1", "true", "TRUE", "yes", "YES"}
 
 
 def ensure_dirs() -> None:
@@ -133,7 +151,6 @@ def save_snapshot_lines(path: str, lines: List[str]) -> None:
 
 def make_unified_diff(prev_lines: List[str], cur_lines: List[str]) -> str:
     import difflib
-
     diff = difflib.unified_diff(prev_lines, cur_lines, lineterm="")
     return "\n".join(diff).strip()
 
@@ -145,16 +162,34 @@ def safe_write_text(path: str, content: str) -> None:
     os.replace(tmp, path)
 
 
+def _write_diff_file(url: str, prev: List[str], cur: List[str]) -> Optional[str]:
+    diff_text = make_unified_diff(prev, cur)
+
+    ts = datetime.now(KST).strftime("%Y%m%d-%H%M%S")
+    safe = url_to_safe_filename(url)
+    diff_filename = f"{safe}__{ts}.diff"
+    diff_path = os.path.join(DIFF_DIR, diff_filename)
+
+    # diff가 빈 문자열일 수 있으니(이론상 거의 없음) 그래도 파일을 만들지 여부는 정책 선택
+    if diff_text:
+        safe_write_text(diff_path, diff_text + "\n")
+        return os.path.relpath(diff_path, ROOT)
+
+    return None
+
+
 def check_and_record_content_change(url: str) -> Tuple[str, Optional[str]]:
     """
     반환:
-      - ("baseline", None): 이전 스냅샷이 없어 베이스라인만 생성 (diff 생성/README 기록 안 함)
+      - ("baseline", None): 이전 스냅샷이 없어 베이스라인만 생성 (기본: diff 생성/README 기록 안 함)
+      - ("baseline", diff_relpath): (옵션) SVT_BASELINE_DIFF=1이면 baseline에서도 diff 생성
       - ("unchanged", None): 이전 스냅샷과 동일 (파일 변경 없음)
       - ("changed", diff_relpath): 실제 변경 감지 → diff 생성 + 스냅샷 갱신
 
     정책:
       - 내용 동일이면 스냅샷 파일도 건드리지 않는다(불필요 커밋 방지)
-      - 첫 실행은 스냅샷만 만들고 diff는 만들지 않는다(초기 전체 diff 폭발 방지)
+      - 첫 실행은 기본적으로 스냅샷만 만들고 diff는 만들지 않는다(초기 전체 diff 폭발 방지)
+        * 단, SVT_BASELINE_DIFF=1이면 baseline에서도 diff 파일 생성(빈 prev 대비)
     """
     ensure_dirs()
 
@@ -167,26 +202,21 @@ def check_and_record_content_change(url: str) -> Tuple[str, Optional[str]]:
     if prev == cur:
         return "unchanged", None
 
+    # baseline (no previous)
     if not prev:
         save_snapshot_lines(snapshot_path, cur)
+        if BASELINE_DIFF:
+            diff_rel = _write_diff_file(url, [], cur)
+            return "baseline", diff_rel
         return "baseline", None
 
-    diff_text = make_unified_diff(prev, cur)
+    # changed
+    diff_rel = _write_diff_file(url, prev, cur)
 
     # 변경이 있으므로 스냅샷 갱신
     save_snapshot_lines(snapshot_path, cur)
 
-    ts = datetime.now(KST).strftime("%Y%m%d-%H%M%S")
-    diff_filename = f"{safe}__{ts}.diff"
-    diff_path = os.path.join(DIFF_DIR, diff_filename)
-
-    if diff_text:
-        safe_write_text(diff_path, diff_text + "\n")
-        diff_rel = os.path.relpath(diff_path, ROOT)
-        return "changed", diff_rel
-
-    # 이론상 거의 없지만 안전 처리
-    return "changed", None
+    return "changed", diff_rel
 
 
 # =========================
@@ -929,6 +959,10 @@ def main() -> int:
     diffs_for_readme: List[Tuple[str, str, List[str]]] = []
     content_changes_for_readme: List[Tuple[str, str, List[str]]] = []
 
+    # content diff 상태 집계 (Actions 디버깅용)
+    content_status_counts = {"baseline": 0, "unchanged": 0, "changed": 0}
+    content_diff_files = 0
+
     for row in rows:
         org = row.get("단체", "").strip()
         name = row.get("표준명 (항목)", "").strip()
@@ -946,10 +980,21 @@ def main() -> int:
         if not is_na(stable_url):
             try:
                 status, diff_rel = check_and_record_content_change(stable_url)
+                if status in content_status_counts:
+                    content_status_counts[status] += 1
+
                 if status in ("baseline", "changed"):
                     logs_changed = True
+                    changed_any = True
+
+                if diff_rel:
+                    content_diff_files += 1
+
                 if status == "changed" and diff_rel:
                     content_notes.append(f"내용 변경 감지(버전 동일) – stable diff: {diff_rel}")
+                if status == "baseline" and diff_rel:
+                    content_notes.append(f"baseline diff 생성 – stable diff: {diff_rel}")
+
             except Exception as e:
                 print("[WARN] stable content snapshot failed:", stable_url, "err=", repr(e))
 
@@ -957,10 +1002,21 @@ def main() -> int:
         if not is_na(draft_url):
             try:
                 status, diff_rel = check_and_record_content_change(draft_url)
+                if status in content_status_counts:
+                    content_status_counts[status] += 1
+
                 if status in ("baseline", "changed"):
                     logs_changed = True
+                    changed_any = True
+
+                if diff_rel:
+                    content_diff_files += 1
+
                 if status == "changed" and diff_rel:
                     content_notes.append(f"내용 변경 감지(버전 동일) – draft diff: {diff_rel}")
+                if status == "baseline" and diff_rel:
+                    content_notes.append(f"baseline diff 생성 – draft diff: {diff_rel}")
+
             except Exception as e:
                 print("[WARN] draft content snapshot failed:", draft_url, "err=", repr(e))
 
@@ -968,6 +1024,7 @@ def main() -> int:
             content_changes_for_readme.append((org, name, content_notes))
 
         if logs_changed:
+            # logs(스냅샷/디프)가 바뀌었을 수도 있음
             changed_any = True
 
         # --- 기존 버전/링크 자동 갱신 로직 ---
@@ -1005,6 +1062,7 @@ def main() -> int:
             if diffs:
                 diffs_for_readme.append((org, name, diffs))
 
+    # 파일 쓰기 / README 업데이트
     if changed_any:
         if csv_changed_any:
             write_csv_rows(CSV_PATH, fieldnames, rows)
@@ -1017,6 +1075,13 @@ def main() -> int:
         )
     else:
         print("[OK] No changes detected.")
+
+    # 디버깅 로그 (Actions에서 baseline 반복 여부 확인)
+    print(
+        "[INFO] content_status_counts="
+        f"{content_status_counts}, diff_files_created={content_diff_files}, "
+        f"snapshot_dir={SNAPSHOT_DIR}, diff_dir={DIFF_DIR}, baseline_diff={BASELINE_DIFF}"
+    )
 
     return 0
 
