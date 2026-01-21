@@ -963,6 +963,11 @@ def update_readme_changelog(
     diffs_by_row: List[Tuple[str, str, List[str]]],
     content_changes_by_row: List[Tuple[str, str, List[str]]],
 ) -> None:
+    """
+    README 변경내역을 '버전 변경'과 'content diff'를 분리해서 기록한다.
+    - Version updates: 펼쳐진 상태로 (가독성 우선)
+    - Content diffs: <details>로 접어서 (README 지저분함 방지)
+    """
     if not diffs_by_row and not content_changes_by_row:
         return
     if not os.path.exists(README_PATH):
@@ -975,15 +980,34 @@ def update_readme_changelog(
         return
 
     today = datetime.now(KST).strftime("%Y-%m-%d")
-    lines = [f"### {today}"]
 
+    # 1) 버전/링크 변경(기존 형식 유지)
+    version_lines: List[str] = []
     for org, name, diffs in diffs_by_row:
         joined = "; ".join(diffs)
-        lines.append(f"- [{org}] {name}: {joined}")
+        version_lines.append(f"- [{org}] {name}: {joined}")
 
-    for org, name, diffs in content_changes_by_row:
-        joined = "; ".join(diffs)
-        lines.append(f"- [{org}] {name}: {joined}")
+    # 2) content diff (접기)
+    content_lines: List[str] = []
+    for org, name, notes in content_changes_by_row:
+        joined = "; ".join(notes)
+        content_lines.append(f"- [{org}] {name}: {joined}")
+
+    lines: List[str] = [f"### {today}"]
+
+    if version_lines:
+        lines.append("")
+        lines.append("#### Version updates")
+        lines.extend(version_lines)
+
+    if content_lines:
+        lines.append("")
+        lines.append("<details>")
+        lines.append("<summary>Content diffs (click to expand)</summary>")
+        lines.append("")
+        lines.extend(content_lines)
+        lines.append("")
+        lines.append("</details>")
 
     block = "\n".join(lines) + "\n\n"
 
@@ -994,7 +1018,6 @@ def update_readme_changelog(
 
     new_readme = readme[:after_heading_pos] + "\n" + block + readme[after_heading_pos:]
     safe_write_text(README_PATH, new_readme)
-
 
 # =========================
 # Main
@@ -1079,9 +1102,9 @@ def main() -> int:
                     content_diff_files += 1
 
                 if status == "changed" and diff_rel:
-                    content_notes.append(f"내용 변경 감지(버전 동일) – stable diff: {diff_rel}")
+                    content_notes.append(f"changed stable: {diff_rel}")
                 if status == "baseline" and diff_rel:
-                    content_notes.append(f"baseline diff 생성 – stable diff: {diff_rel}")
+                    content_notes.append(f"baseline stable: {diff_rel}")
 
             except Exception as e:
                 logger.warning("[WARN] stable content snapshot failed: %s err=%s\n%s",
@@ -1102,9 +1125,9 @@ def main() -> int:
                     content_diff_files += 1
 
                 if status == "changed" and diff_rel:
-                    content_notes.append(f"내용 변경 감지(버전 동일) – draft diff: {diff_rel}")
+                    content_notes.append(f"changed draft: {diff_rel}")
                 if status == "baseline" and diff_rel:
-                    content_notes.append(f"baseline diff 생성 – draft diff: {diff_rel}")
+                    content_notes.append(f"baseline draft: {diff_rel}")
 
             except Exception as e:
                 logger.warning("[WARN] draft content snapshot failed: %s err=%s\n%s",
