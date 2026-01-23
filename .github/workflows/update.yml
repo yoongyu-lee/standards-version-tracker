@@ -12,6 +12,7 @@ permissions:
 jobs:
   update:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -29,33 +30,32 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r scripts/requirements.txt
 
-      # ✅ 이전 실행 스냅샷 복원 (최신 캐시를 prefix로 찾아 restore)
+      # ✅ 최신 snapshots 캐시 restore
       - name: Restore snapshots cache
+        id: cache-snapshots-restore
         uses: actions/cache/restore@v4
         with:
           path: logs/snapshots
           key: svt-snapshots-${{ github.repository }}-${{ github.ref_name }}-${{ github.run_id }}
           restore-keys: |
             svt-snapshots-${{ github.repository }}-${{ github.ref_name }}-
-            svt-snapshots-${{ github.repository }}-
 
       - name: Run updater
         run: |
           python scripts/update_standards.py
         env:
-          # ✅ baseline에서도 diff 생성 (원치 않으면 "0")
           SVT_BASELINE_DIFF: "1"
-          # (선택) 디버깅 상세 로그가 필요하면 1로
           # SVT_DEBUG: "1"
 
-      # ✅ 실행 결과 스냅샷을 "항상" 최신으로 캐시에 저장 (매 run마다 새 key로 저장됨)
+      # ✅ 실행 결과 스냅샷을 “최신 캐시”로 저장 (key가 매번 달라 overwrite 효과)
       - name: Save snapshots cache
+        if: always()
         uses: actions/cache/save@v4
         with:
           path: logs/snapshots
           key: svt-snapshots-${{ github.repository }}-${{ github.ref_name }}-${{ github.run_id }}
 
-      # ✅ run 로그/디프/스냅샷을 artifact로 보관 (repo를 더럽히지 않음)
+      # ✅ logs/diffs 포함 전체 logs를 artifact로 업로드 (repo 오염 X)
       - name: Upload logs artifact
         if: always()
         uses: actions/upload-artifact@v4
@@ -70,10 +70,9 @@ jobs:
           git config user.name "standards-bot"
           git config user.email "standards-bot@users.noreply.github.com"
 
-          # ✅ 커밋 대상(Tracked): CSV/README만 (diff/snapshots는 repo에 저장하지 않음)
+          # ✅ CSV/README만 커밋. diff/snapshots/logs는 커밋하지 않음.
           git add standards.csv README.md
 
-          # staged 변경 없으면 종료
           if git diff --cached --quiet; then
             echo "No staged changes."
             exit 0

@@ -4,17 +4,30 @@
 """
 standards.csv를 Source of Truth로 사용해 Stable/Draft 버전과 링크를 자동 갱신한다.
 
-+ (추가) GitHub Actions에서 "파일이 안 생기는" 원인 분석을 위해
-  - STDOUT + 파일 로그 동시 기록
-  - 실행 환경/경로/권한/디렉토리 생성/스냅샷 쓰기/디프 쓰기/requests 호출/예외(traceback) 전부 로깅
-  - 종료 직전에 logs 디렉토리 트리/파일 목록을 요약 출력
+반영된 동작(요약):
+- Draft Version Link가 비어있거나 N/A여도 stable link 기반으로 Draft discovery 시도
+  * W3C: TR stable에서 Editor’s Draft 탐색 + (날짜/버전) 식별자 확보 시에만 Draft 반영
+  * ISO: stable에서 Next version under development 링크 탐색(기존 유지)
+  * IETF: (보수적) spec_name 또는 링크에 draft-id가 있을 때만 datatracker 최신 revision 반영
+  * OIDF: stable(openid.net/specs) 페이지 내부에 "draft-XX" 명시 링크가 있을 때만 Draft 반영
+  * EU: Draft는 기본 N/A 유지, Stable은 latest 기반 최신 버전/링크로 고정(옵션: 아래 EU 블록 참고)
+  * HL(예: Hyperledger AnonCreds): Draft 자동 discovery 하지 않음
 
-ENV (로깅/디버깅):
+- Stable Version 자동 채움 개선(문제 해결 포인트)
+  * W3C: TR stable에서 vX.Y 또는 날짜(YYYY-MM-DD) 추출
+  * IETF: RFC 링크면 "RFC ####"로 Stable Version 채움
+  * OIDF: spec URL의 "-1_0.html" 등에서 "1.0" 추출
+  * EU: 버전 경로(/X.Y.Z/) 또는 latest 페이지에서 changelog 버전 추출(최신화)
+
+로깅/디프/스냅샷:
+- STDOUT + 파일 로그 동시 기록
+- snapshots/diffs 생성
+- BASELINE_DIFF=1이면 baseline에서도 diff 생성
+
+ENV:
 - SVT_DEBUG=1           : DEBUG 레벨 로그
 - SVT_LOG_STDOUT_ONLY=1 : 파일 로그 없이 stdout만 (기본은 파일+stdout)
 - SVT_LOG_FILE=...      : 로그 파일 경로 강제 지정 (기본: LOG_ROOT/run-YYYYmmdd-HHMMSS.log)
-
-기존 ENV:
 - SVT_LOG_ROOT, SVT_SNAPSHOT_DIR, SVT_DIFF_DIR
 - SVT_BASELINE_DIFF
 """
@@ -29,9 +42,8 @@ import traceback
 import logging
 from dataclasses import dataclass
 from datetime import datetime
-from email.utils import parsedate_to_datetime
 from typing import Dict, List, Optional, Tuple
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin, urlparse, urlunparse, quote
 from zoneinfo import ZoneInfo
 
 import requests
@@ -66,7 +78,7 @@ ENV_DIFF_DIR = os.environ.get("SVT_DIFF_DIR", "").strip()
 SNAPSHOT_DIR = ENV_SNAPSHOT_DIR if ENV_SNAPSHOT_DIR else os.path.join(LOG_ROOT, "snapshots")
 DIFF_DIR = ENV_DIFF_DIR if ENV_DIFF_DIR else os.path.join(LOG_ROOT, "diffs")
 
-# baseline에서도 diff를 만들지 여부 (기본: 0 = 기존 동작 유지)
+# baseline에서도 diff를 만들지 여부 (기본: 0)
 BASELINE_DIFF = os.environ.get("SVT_BASELINE_DIFF", "0").strip() in {"1", "true", "TRUE", "yes", "YES"}
 
 # Logging env
@@ -82,11 +94,6 @@ def _now_kst_ts() -> str:
 
 
 def setup_logging() -> str:
-    """
-    stdout + 파일 로깅 동시 설정.
-    returns: log_file_path (stdout only면 빈 문자열)
-    """
-    # 핸들러 중복 방지
     if logger.handlers:
         return ""
 
@@ -105,17 +112,13 @@ def setup_logging() -> str:
     if not LOG_STDOUT_ONLY:
         try:
             os.makedirs(LOG_ROOT, exist_ok=True)
-            if ENV_LOG_FILE:
-                log_file_path = ENV_LOG_FILE
-            else:
-                log_file_path = os.path.join(LOG_ROOT, f"run-{_now_kst_ts()}.log")
+            log_file_path = ENV_LOG_FILE or os.path.join(LOG_ROOT, f"run-{_now_kst_ts()}.log")
 
             fh = logging.FileHandler(log_file_path, encoding="utf-8")
             fh.setLevel(logging.DEBUG)
             fh.setFormatter(fmt)
             logger.addHandler(fh)
         except Exception:
-            # 파일 로그가 실패해도 stdout 로그로는 남기기
             logger.error("Failed to init file logging:\n%s", traceback.format_exc())
             log_file_path = ""
 
@@ -125,9 +128,6 @@ def setup_logging() -> str:
 
 
 def ensure_dirs() -> None:
-    """
-    스냅샷/디프 디렉토리 생성 + 권한/에러 로깅
-    """
     try:
         os.makedirs(SNAPSHOT_DIR, exist_ok=True)
         os.makedirs(DIFF_DIR, exist_ok=True)
@@ -139,10 +139,6 @@ def ensure_dirs() -> None:
 
 
 def _list_dir_tree(root: str, max_lines: int = 300) -> List[str]:
-    """
-    디버깅용: 디렉토리 트리를 간단히 나열.
-    너무 길어지지 않도록 라인 제한.
-    """
     lines: List[str] = []
     try:
         if not os.path.exists(root):
@@ -167,6 +163,35 @@ def _list_dir_tree(root: str, max_lines: int = 300) -> List[str]:
     return lines
 
 
+def extract_first(regex: str, text: str, flags=0) -> Optional[str]:
+    m = re.search(regex, text, flags)
+    return m.group(1) if m else None
+
+
+def norm_na(v: Optional[str]) -> str:
+    if v is None:
+        return "N/A"
+    s = str(v).strip()
+    if s == "" or s.lower() in {"nan", "none", "null"}:
+        return "N/A"
+    if s.upper() == "N/A":
+        return "N/A"
+    return s
+
+
+def is_na(v: Optional[str]) -> bool:
+    return norm_na(v) == "N/A"
+
+
+def norm_url(url: str) -> str:
+    u = (url or "").strip()
+    if not u:
+        return u
+    p = urlparse(u)
+    p2 = p._replace(fragment="")
+    return urlunparse(p2)
+
+
 def url_to_safe_filename(url: str) -> str:
     parsed = urlparse(url)
     clean_path = re.sub(r"[^a-zA-Z0-9]", "_", (parsed.netloc or "") + (parsed.path or ""))
@@ -176,7 +201,6 @@ def url_to_safe_filename(url: str) -> str:
 
 
 def soup_from_html(html: str) -> BeautifulSoup:
-    # lxml 미설치/파서 문제도 여기서 터질 수 있으니 로깅
     try:
         return BeautifulSoup(html, "lxml")
     except Exception:
@@ -185,9 +209,32 @@ def soup_from_html(html: str) -> BeautifulSoup:
         return BeautifulSoup(html, "html.parser")
 
 
-def extract_first(regex: str, text: str, flags=0) -> Optional[str]:
-    m = re.search(regex, text, flags)
-    return m.group(1) if m else None
+def _extract_html_redirect_target(base_url: str, html: str) -> Optional[str]:
+    m = re.search(
+        r'<meta[^>]+http-equiv=["\']?refresh["\']?[^>]+content=["\']?[^"\']*url\s*=\s*([^"\'>\s;]+)',
+        html,
+        re.IGNORECASE,
+    )
+    if m:
+        return urljoin(base_url, m.group(1).strip())
+
+    m = re.search(r'window\.location(?:\.href)?\s*=\s*["\']([^"\']+)["\']', html, re.IGNORECASE)
+    if m:
+        return urljoin(base_url, m.group(1).strip())
+
+    if re.search(r"\bRedirecting\b", html, re.IGNORECASE):
+        soup = soup_from_html(html)
+        for a in soup.find_all("a", href=True):
+            href = (a.get("href") or "").strip()
+            if href:
+                return urljoin(base_url, href)
+
+    soup = soup_from_html(html)
+    link = soup.find("link", attrs={"rel": re.compile(r"\bcanonical\b", re.IGNORECASE)})
+    if link and link.get("href"):
+        return urljoin(base_url, link["href"].strip())
+
+    return None
 
 
 def http_get(
@@ -196,20 +243,15 @@ def http_get(
     return_headers: bool = False,
     return_final_url: bool = False,
 ):
-    """
-    - HTTP redirect는 requests가 처리(allow_redirects=True)
-    - HTML 기반 redirect(meta refresh/JS/link)도 최대 2 hop까지 수동 추적
-    + (추가) 각 hop마다 status/최종URL/헤더 일부/본문 길이 로깅
-    """
     headers = {
         "User-Agent": "standards-version-tracker-bot/1.0 (+https://github.com/yoongyu-lee/standards-version-tracker)"
     }
 
-    final_url = url
+    final_url = norm_url(url)
     last_headers = None
     text = None
 
-    for hop in range(1, 4):  # 최대 2번 추가 추적(총 3번 fetch)
+    for hop in range(1, 4):
         try:
             logger.debug("[HTTP] GET hop=%d url=%s timeout=%s", hop, final_url, timeout)
             r = requests.get(final_url, headers=headers, timeout=timeout, allow_redirects=True)
@@ -218,16 +260,18 @@ def http_get(
             r.raise_for_status()
             text = r.text
             last_headers = r.headers
-            final_url = r.url
+            final_url = norm_url(r.url)
         except Exception:
             logger.error("[HTTP] FAILED hop=%d url=%s\n%s", hop, final_url, traceback.format_exc())
             raise
 
         target = _extract_html_redirect_target(final_url, text)
-        if target and target != final_url:
-            logger.debug("[HTTP] HTML redirect detected: %s -> %s", final_url, target)
-            final_url = target
-            continue
+        if target:
+            t = norm_url(target)
+            if t and t != final_url:
+                logger.debug("[HTTP] HTML redirect detected: %s -> %s", final_url, t)
+                final_url = t
+                continue
         break
 
     assert text is not None and last_headers is not None
@@ -241,11 +285,11 @@ def http_get(
     return text
 
 
+# -------------------------
+# Diff snapshot logic
+# -------------------------
+
 def fetch_page_lines_for_diff(url: str) -> List[str]:
-    """
-    HTML <body> 텍스트를 줄 단위로 추출해 비교 가능한 형태로 정규화
-    + (추가) 라인 수 로깅
-    """
     html = http_get(url)
     soup = soup_from_html(html)
 
@@ -270,27 +314,19 @@ def load_snapshot_lines(path: str) -> List[str]:
     if not os.path.exists(path):
         logger.debug("[FS] snapshot missing path=%s", path)
         return []
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            lines = [line.rstrip("\n") for line in f.readlines()]
-        logger.debug("[FS] snapshot loaded path=%s lines=%d", path, len(lines))
-        return lines
-    except Exception:
-        logger.error("[FS] snapshot read FAILED path=%s\n%s", path, traceback.format_exc())
-        raise
+    with open(path, "r", encoding="utf-8") as f:
+        lines = [line.rstrip("\n") for line in f.readlines()]
+    logger.debug("[FS] snapshot loaded path=%s lines=%d", path, len(lines))
+    return lines
 
 
 def save_snapshot_lines(path: str, lines: List[str]) -> None:
     tmp = path + ".tmp"
-    try:
-        with open(tmp, "w", encoding="utf-8") as f:
-            for line in lines:
-                f.write(line + "\n")
-        os.replace(tmp, path)
-        logger.debug("[FS] snapshot saved path=%s lines=%d", path, len(lines))
-    except Exception:
-        logger.error("[FS] snapshot write FAILED path=%s tmp=%s\n%s", path, tmp, traceback.format_exc())
-        raise
+    with open(tmp, "w", encoding="utf-8") as f:
+        for line in lines:
+            f.write(line + "\n")
+    os.replace(tmp, path)
+    logger.debug("[FS] snapshot saved path=%s lines=%d", path, len(lines))
 
 
 def make_unified_diff(prev_lines: List[str], cur_lines: List[str]) -> str:
@@ -301,14 +337,10 @@ def make_unified_diff(prev_lines: List[str], cur_lines: List[str]) -> str:
 
 def safe_write_text(path: str, content: str) -> None:
     tmp = path + ".tmp"
-    try:
-        with open(tmp, "w", encoding="utf-8") as f:
-            f.write(content)
-        os.replace(tmp, path)
-        logger.debug("[FS] file saved path=%s bytes=%d", path, len(content.encode("utf-8", "ignore")))
-    except Exception:
-        logger.error("[FS] file write FAILED path=%s tmp=%s\n%s", path, tmp, traceback.format_exc())
-        raise
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(content)
+    os.replace(tmp, path)
+    logger.debug("[FS] file saved path=%s bytes=%d", path, len(content.encode("utf-8", "ignore")))
 
 
 def _write_diff_file(url: str, prev: List[str], cur: List[str]) -> Optional[str]:
@@ -330,13 +362,6 @@ def _write_diff_file(url: str, prev: List[str], cur: List[str]) -> Optional[str]
 
 
 def check_and_record_content_change(url: str) -> Tuple[str, Optional[str]]:
-    """
-    반환:
-      - ("baseline", None): 이전 스냅샷이 없어 베이스라인만 생성 (기본: diff 생성/README 기록 안 함)
-      - ("baseline", diff_relpath): (옵션) SVT_BASELINE_DIFF=1이면 baseline에서도 diff 생성
-      - ("unchanged", None): 이전 스냅샷과 동일 (파일 변경 없음)
-      - ("changed", diff_relpath): 실제 변경 감지 → diff 생성 + 스냅샷 갱신
-    """
     ensure_dirs()
 
     safe = url_to_safe_filename(url)
@@ -350,7 +375,6 @@ def check_and_record_content_change(url: str) -> Tuple[str, Optional[str]]:
         return "unchanged", None
 
     if not prev:
-        # baseline
         logger.info("[DIFF] baseline url=%s snapshot=%s (BASELINE_DIFF=%s)", url, snapshot_path, BASELINE_DIFF)
         save_snapshot_lines(snapshot_path, cur)
         if BASELINE_DIFF:
@@ -358,7 +382,6 @@ def check_and_record_content_change(url: str) -> Tuple[str, Optional[str]]:
             return "baseline", diff_rel
         return "baseline", None
 
-    # changed
     logger.info("[DIFF] changed url=%s snapshot=%s prev_lines=%d cur_lines=%d",
                 url, snapshot_path, len(prev), len(cur))
     diff_rel = _write_diff_file(url, prev, cur)
@@ -366,24 +389,9 @@ def check_and_record_content_change(url: str) -> Tuple[str, Optional[str]]:
     return "changed", diff_rel
 
 
-# =========================
-# Utils (general)
-# =========================
-
-def norm_na(v: Optional[str]) -> str:
-    if v is None:
-        return "N/A"
-    s = str(v).strip()
-    if s == "" or s.lower() in {"nan", "none", "null"}:
-        return "N/A"
-    if s.upper() == "N/A":
-        return "N/A"
-    return s
-
-
-def is_na(v: Optional[str]) -> bool:
-    return norm_na(v) == "N/A"
-
+# -------------------------
+# Version parsing utils
+# -------------------------
 
 def has_identifier(s: str) -> bool:
     if not s:
@@ -394,7 +402,6 @@ def has_identifier(s: str) -> bool:
         return True
     if re.search(r"\bdraft-[a-z0-9-]+-\d{1,2}\b", s, re.IGNORECASE):
         return True
-    # ✅ ISO DIS 같은 형태도 identifier로 인정
     if re.search(r"\bISO/IEC\s+DIS\b", s):
         return True
     return False
@@ -411,11 +418,6 @@ def specificity_score(s: str) -> int:
         score += 50
     if re.search(r"\bv?\d+\.\d+(\.\d+)?\b", s, re.IGNORECASE):
         score += 10
-    if re.search(r"(년|월|일)", s):
-        score += 5
-    # ISO DIS 포함이면 추가 가점
-    if re.search(r"\bISO/IEC\s+DIS\b", s):
-        score += 30
     score += min(len(s), 200) // 20
     return score
 
@@ -455,37 +457,9 @@ def compute_core_change(before_row: Dict[str, str], after_row: Dict[str, str]) -
     return "; ".join(parts)
 
 
-def _extract_html_redirect_target(base_url: str, html: str) -> Optional[str]:
-    m = re.search(
-        r'<meta[^>]+http-equiv=["\']?refresh["\']?[^>]+content=["\']?[^"\']*url\s*=\s*([^"\'>\s;]+)',
-        html,
-        re.IGNORECASE,
-    )
-    if m:
-        return urljoin(base_url, m.group(1).strip())
-
-    m = re.search(r'window\.location(?:\.href)?\s*=\s*["\']([^"\']+)["\']', html, re.IGNORECASE)
-    if m:
-        return urljoin(base_url, m.group(1).strip())
-
-    if re.search(r"\bRedirecting\b", html, re.IGNORECASE):
-        soup = soup_from_html(html)
-        for a in soup.find_all("a", href=True):
-            href = (a.get("href") or "").strip()
-            if href:
-                return urljoin(base_url, href)
-
-    soup = soup_from_html(html)
-    link = soup.find("link", attrs={"rel": re.compile(r"\bcanonical\b", re.IGNORECASE)})
-    if link and link.get("href"):
-        return urljoin(base_url, link["href"].strip())
-
-    return None
-
-
-# =========================
+# -------------------------
 # Data model
-# =========================
+# -------------------------
 
 @dataclass
 class RowUpdate:
@@ -495,225 +469,12 @@ class RowUpdate:
     draft_link: Optional[str] = None
 
 
-# =========================
-# Parsers
-# =========================
+# -------------------------
+# Parsers / Discovery
+# -------------------------
 
-MONTHS = {
-    "january": "01", "february": "02", "march": "03", "april": "04",
-    "may": "05", "june": "06", "july": "07", "august": "08",
-    "september": "09", "october": "10", "november": "11", "december": "12",
-}
-
-
-def parse_w3c_tr_version_from_url(url: str) -> Optional[str]:
-    return extract_first(r"/[a-z0-9\-]+-([0-9]+\.[0-9]+(\.[0-9]+)?)\/?$", url, re.IGNORECASE)
-
-
-def w3c_extract_sotd_window_text(soup: BeautifulSoup) -> str:
-    body_text = soup.get_text("\n", strip=True)
-    lines = body_text.splitlines()
-    for i, line in enumerate(lines):
-        if re.search(r"status\s+of\s+this\s+document", line, re.IGNORECASE):
-            start = max(0, i)
-            end = min(len(lines), i + 250)
-            return "\n".join(lines[start:end])
-    return body_text
-
-
-def parse_w3c_tr_stable(url: str) -> Tuple[Optional[str], Optional[str]]:
-    html = http_get(url)
-    soup = soup_from_html(html)
-
-    title = (soup.title.get_text(" ", strip=True) if soup.title else "").strip()
-    h1 = soup.find("h1")
-    h1txt = h1.get_text(" ", strip=True) if h1 else ""
-
-    status_map = {
-        "W3C Recommendation": "Recommendation",
-        "W3C Proposed Recommendation": "Proposed Recommendation",
-        "W3C Candidate Recommendation": "Candidate Recommendation",
-        "W3C Candidate Recommendation Draft": "Candidate Recommendation Draft",
-        "W3C Working Draft": "Working Draft",
-        "W3C First Public Working Draft": "First Public Working Draft",
-        "W3C Note": "Note",
-    }
-
-    window = w3c_extract_sotd_window_text(soup)
-
-    status = None
-    window_l = window.lower()
-    for k, v in status_map.items():
-        if k.lower() in window_l:
-            status = v
-            break
-
-    if "did-1.1" in url and re.search(r"\bexperimental\b|DO NOT implement", window, re.IGNORECASE):
-        if status == "Recommendation":
-            status = None
-
-    ver = parse_w3c_tr_version_from_url(url)
-    if not ver:
-        ver = (
-            extract_first(r"\bv([0-9]+\.[0-9]+(\.[0-9]+)?)\b", h1txt, re.IGNORECASE)
-            or extract_first(r"\bv([0-9]+\.[0-9]+(\.[0-9]+)?)\b", title, re.IGNORECASE)
-        )
-    if not ver:
-        ver = (
-            extract_first(r"\b([0-9]+\.[0-9]+(\.[0-9]+)?)\b", h1txt)
-            or extract_first(r"\b([0-9]+\.[0-9]+(\.[0-9]+)?)\b", title)
-        )
-
-    if ver and status:
-        return f"v{ver} ({status})", url
-    if ver:
-        return f"v{ver} (W3C TR)", url
-    return None, None
-
-
-def parse_w3c_ed_draft(url: str) -> Tuple[Optional[str], Optional[str]]:
-    html, headers = http_get(url, return_headers=True)
-    soup = soup_from_html(html)
-
-    title = (soup.title.get_text(" ", strip=True) if soup.title else "").strip()
-    h1 = soup.find("h1")
-    h1txt = h1.get_text(" ", strip=True) if h1 else ""
-
-    ver = (
-        extract_first(r"\bv([0-9]+(\.[0-9]+){1,2})\b", h1txt, re.IGNORECASE)
-        or extract_first(r"\bv([0-9]+(\.[0-9]+){1,2})\b", title, re.IGNORECASE)
-    )
-
-    if not ver:
-        ver = (
-            extract_first(r"\b([0-9]{1,2}\.[0-9]{1,2}(?:\.[0-9]{1,2})?)\b", h1txt)
-            or extract_first(r"\b([0-9]{1,2}\.[0-9]{1,2}(?:\.[0-9]{1,2})?)\b", title)
-        )
-
-    dt: Optional[str] = None
-    meta_keys = {"dcterms.modified", "dcterms.issued", "dc.date", "dc.modified", "last-modified"}
-    for m in soup.find_all("meta"):
-        name = (m.get("name") or "").strip().lower()
-        prop = (m.get("property") or "").strip().lower()
-        key = name or prop
-        if key in meta_keys:
-            content = (m.get("content") or "").strip()
-            d = extract_first(r"\b(\d{4}-\d{2}-\d{2})\b", content)
-            if d:
-                dt = d
-                break
-
-    if not dt:
-        for t in soup.find_all("time"):
-            datetime_attr = (t.get("datetime") or "").strip()
-            d = extract_first(r"\b(\d{4}-\d{2}-\d{2})\b", datetime_attr)
-            if d:
-                dt = d
-                break
-            txt = t.get_text(" ", strip=True)
-            d = extract_first(r"\b(\d{4}-\d{2}-\d{2})\b", txt)
-            if d:
-                dt = d
-                break
-
-    if not dt:
-        body_text = soup.get_text("\n", strip=True)
-        for line in body_text.splitlines():
-            l = line.strip()
-            if not l:
-                continue
-            if re.search(r"\b(This version|Last updated|Updated|Modified)\b", l, re.IGNORECASE):
-                d = extract_first(r"\b(\d{4}-\d{2}-\d{2})\b", l)
-                if d:
-                    dt = d
-                    break
-
-    if not dt:
-        lm = (headers.get("Last-Modified") or "").strip()
-        if lm:
-            try:
-                dt_obj = parsedate_to_datetime(lm)
-                dt = dt_obj.date().isoformat()
-            except Exception:
-                dt = None
-
-    if ver and dt:
-        return f"v{ver} ({dt} Editor's Draft)", url
-    if dt:
-        return f"{dt} (Editor's Draft)", url
-    if ver:
-        return f"v{ver} (Editor's Draft)", url
-    return None, None
-
-
-def parse_rfc_from_link_or_page(url: str) -> Tuple[Optional[str], Optional[str]]:
-    rfc = extract_first(r"\brfc(\d{3,5})\b", url, re.IGNORECASE)
-    if rfc:
-        return f"RFC {rfc}", url
-
-    try:
-        text = http_get(url)
-    except Exception:
-        return None, None
-
-    rfc2 = extract_first(r"\bRFC\s+(\d{3,5})\b", text)
-    if rfc2:
-        return f"RFC {rfc2}", url
-    return None, None
-
-
-def parse_ietf_draft_from_datatracker(url: str) -> Tuple[Optional[str], Optional[str]]:
-    html = http_get(url)
-    draft_id = extract_first(r"\b(draft-[a-z0-9-]+-\d{1,2})\b", html, re.IGNORECASE)
-    if not draft_id:
-        return None, None
-    return f"{draft_id} (Internet-Draft)", url
-
-
-def parse_semver_from_url(url: str) -> Optional[str]:
-    return extract_first(r"/(\d+\.\d+\.\d+)(/|$)", url)
-
-
-def parse_oidf_spec_stable(url: str) -> Tuple[Optional[str], Optional[str]]:
-    html = http_get(url)
-    soup = soup_from_html(html)
-    text = soup.get_text("\n", strip=True)
-
-    title = (soup.title.get_text(" ", strip=True) if soup.title else "")
-    h1 = soup.find(["h1", "h2"])
-    htxt = h1.get_text(" ", strip=True) if h1 else ""
-
-    ver = (
-        extract_first(r"\b([0-9]+\.[0-9]+)\b", htxt)
-        or extract_first(r"\b([0-9]+\.[0-9]+)\b", title)
-        or extract_first(r"\b([0-9]+\.[0-9]+)\b", text)
-    )
-    if not ver:
-        return None, None
-
-    status = None
-    m = re.search(r"^Status:\s*(.+)$", text, re.MULTILINE)
-    if m:
-        status = m.group(1).strip()
-
-    pub_iso = None
-    m = re.search(r"^Published:\s*([0-9]{1,2})\s+([A-Za-z]+)\s+([0-9]{4})\s*$", text, re.MULTILINE)
-    if m:
-        dd, mon, yyyy = m.group(1), m.group(2).lower(), m.group(3)
-        if mon in MONTHS:
-            pub_iso = f"{yyyy}-{MONTHS[mon]}-{int(dd):02d}"
-
-    if status and pub_iso:
-        return f"{ver} ({status}, {pub_iso})", url
-    if status:
-        return f"{ver} ({status})", url
-    if pub_iso:
-        return f"{ver} ({pub_iso})", url
-    return f"{ver}", url
-
-
-def parse_iso_stable(url: str) -> Tuple[Optional[str], Optional[str]]:
-    html = http_get(url)
+def parse_iso_stable(url: str, spec_name: str) -> Tuple[Optional[str], Optional[str]]:
+    html, final_url = http_get(url, return_final_url=True)
     soup = soup_from_html(html)
     text = soup.get_text("\n", strip=True)
 
@@ -722,149 +483,504 @@ def parse_iso_stable(url: str) -> Tuple[Optional[str], Optional[str]]:
         or extract_first(r"Publication date\s*:?\s*([0-9]{4}-[0-9]{2})", text)
     )
     if pub:
-        return f"ISO Publication: {pub}", url
+        return f"{spec_name} (ISO Publication: {pub})", final_url
 
     pub2 = extract_first(r"\bPublished\s*:?\s*([0-9]{4}-[0-9]{2})\b", text)
     if pub2:
-        return f"ISO Publication: {pub2}", url
+        return f"{spec_name} (ISO Publication: {pub2})", final_url
 
-    return None, None
+    return None, final_url
 
 
-def parse_iso_draft(url: str, spec_name: str) -> Tuple[Optional[str], Optional[str]]:
-    """
-    ✅ 개선:
-    - Life cycle에서 날짜 파싱 실패해도,
-      draft 링크가 있는 이상 'DIS'임을 버전으로 기록해야 함 (N/A로 두면 안됨)
-    """
-    html = http_get(url)
+def discover_iso_next_draft_from_stable(stable_url: str) -> Optional[str]:
+    try:
+        html, final_url = http_get(stable_url, return_final_url=True)
+    except Exception:
+        return None
+
+    soup = soup_from_html(html)
+    anchors = soup.find_all("a", href=True)
+
+    candidates: List[str] = []
+    for a in anchors:
+        href = (a.get("href") or "").strip()
+        if not href:
+            continue
+        u = norm_url(urljoin(final_url, href))
+        if "iso.org/standard/" in u and re.search(r"/standard/\d+\.html$", u):
+            candidates.append(u)
+
+    return candidates[0] if candidates else None
+
+
+def parse_iso_draft(url: str) -> Tuple[Optional[str], Optional[str]]:
+    html, final_url = http_get(url, return_final_url=True)
     soup = soup_from_html(html)
     text = soup.get_text("\n", strip=True)
 
-    # 1) Life cycle: 40.20 ... 2026-01-01 ...
-    d = extract_first(r"\b40\.20\s+(\d{4}-\d{2}-\d{2})\b", text)
-    if d:
-        ref = extract_first(r"\b(ISO/IEC\s+DIS\s+[0-9-]+)\b", text)
+    ref = extract_first(r"\b(ISO(?:/IEC)?\s+DIS\s+[0-9-]+)\b", text)
+    if ref:
+        ref = re.sub(r"\s+", " ", ref.strip())
+
+    d_4020 = extract_first(r"\b40\.20\s+(\d{4}-\d{2}-\d{2})\b", text)
+    if d_4020:
         if ref:
-            ref = re.sub(r"\s+", " ", ref.strip())
-            return f"{ref} (DIS ballot initiated: {d})", url
-        return f"ISO/IEC DIS {spec_name.split(':')[0].strip()} (DIS ballot initiated: {d})", url
+            return f"{ref} (DIS ballot initiated: {d_4020})", final_url
+        return f"DIS ballot initiated: {d_4020} (ISO Draft)", final_url
 
-    # 2) 다른 단계라도 날짜가 있으면 잡기
-    d2 = extract_first(r"\b(20|19)\d{2}-\d{2}-\d{2}\b", text)
-    if d2:
-        ref = extract_first(r"\b(ISO/IEC\s+DIS\s+[0-9-]+)\b", text)
+    d_any = extract_first(r"\b(20|19)\d{2}-\d{2}-\d{2}\b", text)
+    if d_any:
         if ref:
-            ref = re.sub(r"\s+", " ", ref.strip())
-            return f"{ref} ({d2} ISO Draft)", url
+            return f"{ref} ({d_any} ISO Draft)", final_url
+        return f"{d_any} (ISO Draft)", final_url
 
-    # 3) ✅ fallback: 페이지 텍스트에서 DIS ref 추출
-    ref2 = extract_first(r"\b(ISO/IEC\s+DIS\s+[0-9-]+)\b", text)
-    if ref2:
-        ref2 = re.sub(r"\s+", " ", ref2.strip())
-        return f"{ref2} (ISO Draft)", url
+    if ref:
+        return f"{ref} (ISO Draft)", final_url
 
-    # 4) ✅ last fallback: 최소 DIS 식별자라도 기록
-    # (ISO draft 링크 존재 = draft 확정)
-    return f"ISO/IEC DIS {spec_name.split(':')[0].strip()} (ISO Draft)", url
+    return None, final_url
 
 
-# =========================
+def parse_w3c_stable(url: str) -> Tuple[Optional[str], Optional[str]]:
+    """
+    W3C TR stable에서 Stable Version 추출:
+    - 우선순위: h1/title에서 vX.Y(.Z)
+    - fallback: 페이지 내 YYYY-MM-DD (식별자 충족 목적)
+    """
+    html, final_url = http_get(url, return_final_url=True)
+    soup = soup_from_html(html)
+
+    h1 = soup.find("h1")
+    title = (h1.get_text(" ", strip=True) if h1 else "") or (soup.title.get_text(" ", strip=True) if soup.title else "")
+    m = re.search(r"\bv?\d+\.\d+(?:\.\d+)?\b", title, re.IGNORECASE)
+    if m:
+        v = m.group(0)
+        if not v.lower().startswith("v"):
+            v = "v" + v
+        return v, final_url
+
+    text = soup.get_text("\n", strip=True)
+    m2 = re.search(r"\b(20\d{2}-\d{2}-\d{2})\b", text)
+    if m2:
+        return f"{m2.group(1)} (W3C TR)", final_url
+
+    return None, final_url
+
+
+def parse_w3c_draft_version(draft_url: str) -> Optional[str]:
+    """
+    W3C Editor’s Draft(또는 WD) 페이지에서 날짜/버전 식별자를 찾아
+    'YYYY-MM-DD Editor's Draft' 같은 형태로 반환.
+    """
+    try:
+        html = http_get(draft_url)
+    except Exception:
+        return None
+
+    m = re.search(r"\b(20\d{2}-\d{2}-\d{2})\b", html)
+    if m:
+        return f"{m.group(1)} Editor's Draft"
+
+    m2 = re.search(r"\bv?\d+\.\d+(?:\.\d+)?\b", html, re.IGNORECASE)
+    if m2:
+        return f"{m2.group(0)} Editor's Draft"
+
+    return None
+
+
+def discover_w3c_draft_from_stable(stable_url: str) -> Tuple[Optional[str], Optional[str]]:
+    """
+    W3C TR stable 페이지에서 Editor’s Draft 링크를 찾고,
+    Draft Version(식별자 포함)까지 확보되면 (draft_version, draft_link) 반환.
+    """
+    try:
+        html, final_url = http_get(stable_url, return_final_url=True)
+    except Exception:
+        return None, None
+
+    soup = soup_from_html(html)
+
+    ed_href = None
+    for a in soup.find_all("a", href=True):
+        txt = (a.get_text(" ", strip=True) or "").strip()
+        if re.search(r"Editor(?:’|'|)s Draft", txt, re.IGNORECASE):
+            ed_href = a["href"].strip()
+            break
+
+    if not ed_href:
+        text = soup.get_text("\n", strip=True)
+        if re.search(r"Editor(?:’|'|)s Draft", text, re.IGNORECASE):
+            for a in soup.find_all("a", href=True):
+                href = (a.get("href") or "").strip()
+                if "w3c.github.io" in href:
+                    ed_href = href
+                    break
+
+    if not ed_href:
+        return None, None
+
+    draft_link = norm_url(urljoin(final_url, ed_href))
+
+    dv = parse_w3c_draft_version(draft_link)
+    if not dv or not has_identifier(dv):
+        return None, None
+
+    return dv, draft_link
+
+
+def parse_ietf_stable_from_rfc_url(url: str) -> Optional[str]:
+    u = (url or "").lower()
+    m = re.search(r"/rfc(\d+)(?:/|$)", u)
+    if m:
+        return f"RFC {m.group(1)}"
+    m2 = re.search(r"/doc/rfc(\d+)(?:/|$)", u)
+    if m2:
+        return f"RFC {m2.group(1)}"
+    return None
+
+
+def _ietf_extract_draft_id_from_text(text: str) -> Optional[str]:
+    """
+    spec_name 등에 draft-ietf-...-NN 형태가 있으면 base name 반환.
+      - 입력: draft-ietf-oauth-v2-1-12 -> base: draft-ietf-oauth-v2-1
+      - 입력: draft-ietf-oauth-v2-1    -> base: draft-ietf-oauth-v2-1
+    """
+    if not text:
+        return None
+    m = re.search(r"\b(draft-[a-z0-9-]+-\d{1,2})\b", text, re.IGNORECASE)
+    if m:
+        full = m.group(1)
+        base = re.sub(r"-\d{1,2}$", "", full)
+        return base.lower()
+
+    m2 = re.search(r"\b(draft-[a-z0-9-]+)\b", text, re.IGNORECASE)
+    if m2:
+        return m2.group(1).lower()
+
+    return None
+
+
+def _ietf_datatracker_fetch_latest_revision(base_draft_name: str) -> Tuple[Optional[str], Optional[str]]:
+    """
+    base_draft_name에 대해 datatracker 문서 HTML에서 가장 큰 revision(-NN)을 선택해 반환.
+    """
+    if not base_draft_name:
+        return None, None
+
+    doc_url = f"https://datatracker.ietf.org/doc/{quote(base_draft_name)}/"
+    try:
+        html, final_url = http_get(doc_url, return_final_url=True)
+    except Exception:
+        return None, None
+
+    matches = re.findall(rf"\b({re.escape(base_draft_name)}-\d{{1,2}})\b", html, re.IGNORECASE)
+    if not matches:
+        return None, final_url
+
+    best = None
+    best_n = -1
+    for m in matches:
+        mm = re.search(r"-(\d{1,2})$", m)
+        if not mm:
+            continue
+        n = int(mm.group(1))
+        if n > best_n:
+            best_n = n
+            best = m.lower()
+
+    if not best:
+        return None, final_url
+
+    draft_id = best
+    draft_link = f"https://datatracker.ietf.org/doc/html/{quote(draft_id)}"
+    draft_version = f"{draft_id} Internet-Draft"
+    return draft_version, draft_link
+
+
+def parse_oidf_stable_from_spec_url(url: str) -> Optional[str]:
+    """
+    OIDF stable spec URL에서 "-1_0.html" 같은 버전을 "1.0" 형태로 추출
+    """
+    u = (url or "")
+    m = re.search(r"-(\d+)_(\d+)(?:[^/]*?)\.html?$", u)
+    if m:
+        return f"{m.group(1)}.{m.group(2)}"
+    return None
+
+
+def discover_oidf_draft_from_stable(stable_url: str) -> Tuple[Optional[str], Optional[str]]:
+    """
+    OIDF는 추정 금지:
+    - stable(openid.net/specs/...) 문서에서 명시적으로 드러난 draft 링크 중
+      파일명에 draft-XX(식별자)가 있는 경우만 채택한다.
+    """
+    try:
+        html, final_url = http_get(stable_url, return_final_url=True)
+    except Exception:
+        return None, None
+
+    if "openid.net" not in (urlparse(final_url).netloc or ""):
+        return None, None
+
+    soup = soup_from_html(html)
+    candidates: List[str] = []
+
+    for a in soup.find_all("a", href=True):
+        href = (a.get("href") or "").strip()
+        if not href:
+            continue
+        u = norm_url(urljoin(final_url, href))
+        if "openid.net/specs/" in u and re.search(r"draft-\d{1,3}", u, re.IGNORECASE):
+            candidates.append(u)
+
+    if not candidates:
+        m = re.findall(
+            r"https?://[^\"'\s>]+openid\.net/specs/[^\"'\s>]+draft-\d{1,3}[^\"'\s>]*",
+            html,
+            re.IGNORECASE,
+        )
+        candidates.extend([norm_url(x) for x in m])
+
+    best = None
+    best_n = -1
+    for u in candidates:
+        mm = re.search(r"draft-(\d{1,3})", u, re.IGNORECASE)
+        if not mm:
+            continue
+        n = int(mm.group(1))
+        if n > best_n:
+            best_n = n
+            best = u
+
+    if not best:
+        return None, None
+
+    dv = f"draft-{best_n} (OIDF Draft)"
+    return dv, best
+
+
+def parse_eu_stable_from_url(url: str) -> Optional[str]:
+    if not url:
+        return None
+    p = urlparse(url)
+    path = p.path or ""
+    m = re.search(r"/(\d+\.\d+\.\d+)/", path)
+    if m:
+        return m.group(1)
+    return None
+
+
+def normalize_final_url(url: str) -> Tuple[Optional[str], Optional[str]]:
+    try:
+        _, final_url = http_get(url, return_final_url=True)
+        return None, final_url
+    except Exception:
+        return None, None
+
+
+def discover_eudi_arf_latest_stable(current_stable_url: str) -> Tuple[Optional[str], Optional[str]]:
+    """
+    EU(EUDI ARF) Stable 링크가 구버전이어도, eudi.dev/latest/... 를 통해 최신 버전을 찾아
+    버전 고정 URL로 확정한다.
+
+    반환: (stable_version, stable_link)
+    """
+    if not current_stable_url:
+        return None, None
+
+    cur = norm_url(current_stable_url)
+    p = urlparse(cur)
+    if "eudi.dev" not in (p.netloc or "") and "github.io" not in (p.netloc or ""):
+        # eudi.dev or eu-digital-identity-wallet.github.io 모두 가능
+        return None, None
+
+    # latest URL 강제
+    path = p.path or ""
+    path2 = re.sub(r"^/(\d+\.\d+\.\d+)/", "/latest/", path)
+    if not path2.startswith("/latest/"):
+        path2 = "/latest/architecture-and-reference-framework-main/"
+
+    latest_url = urlunparse(p._replace(path=path2, params="", query="", fragment=""))
+
+    try:
+        html, latest_final = http_get(latest_url, return_final_url=True)
+    except Exception:
+        # latest 실패 -> 기존 링크 final_url 정규화 + URL에서 버전 파싱
+        try:
+            _, final_url = http_get(cur, return_final_url=True)
+            return parse_eu_stable_from_url(final_url) or parse_eu_stable_from_url(cur), final_url
+        except Exception:
+            return None, None
+
+    # 페이지에서 changelog 버전 파싱 ("Change Log v2.7.3")
+    m = re.search(r"\bChange\s+Log\s+v(\d+\.\d+\.\d+)\b", html, re.IGNORECASE)
+    ver = m.group(1) if m else None
+    if not ver:
+        ver = parse_eu_stable_from_url(latest_final) or parse_eu_stable_from_url(cur)
+
+    if not ver:
+        # 버전 확보 실패 -> 링크만 최신으로
+        return None, latest_final
+
+    # 버전 고정 URL 구성 (latest_final path를 버전 경로로 치환)
+    latest_parsed = urlparse(latest_final)
+    fixed_path = re.sub(r"^/latest/", f"/{ver}/", (latest_parsed.path or "/latest/architecture-and-reference-framework-main/"))
+    fixed_url = urlunparse(latest_parsed._replace(path=fixed_path, params="", query="", fragment=""))
+
+    try:
+        _, fixed_final = http_get(fixed_url, return_final_url=True)
+        return ver, fixed_final
+    except Exception:
+        return ver, latest_final
+
+
+# -------------------------
 # Routing
-# =========================
+# -------------------------
 
 def compute_update_for_row(org: str, spec_name: str, stable_link: str, draft_link: str) -> RowUpdate:
     org = (org or "").strip()
     spec_name = (spec_name or "").strip()
 
-    stable_link_n = norm_na(stable_link)
-    draft_link_n = norm_na(draft_link)
+    stable_link_n = norm_na(norm_url(stable_link))
+    draft_link_n = norm_na(norm_url(draft_link))
 
     upd = RowUpdate()
 
-    # --- Stable ---
+    # ---- ISO: stable에서 next draft 링크를 항상 최신화 ----
+    if org == "ISO" and not is_na(stable_link_n) and "iso.org/standard/" in stable_link_n:
+        try:
+            sv, sl = parse_iso_stable(stable_link_n, spec_name)
+            if sl:
+                upd.stable_link = sl
+            if sv:
+                upd.stable_version = sv
+
+            latest_draft_link = discover_iso_next_draft_from_stable(sl or stable_link_n)
+            if latest_draft_link:
+                upd.draft_link = latest_draft_link
+                dv, dl2 = parse_iso_draft(latest_draft_link)
+                if dl2:
+                    upd.draft_link = dl2
+                if dv:
+                    upd.draft_version = dv
+            else:
+                if not is_na(draft_link_n):
+                    dv, dl2 = parse_iso_draft(draft_link_n)
+                    if dl2:
+                        upd.draft_link = dl2
+                    if dv:
+                        upd.draft_version = dv
+
+        except Exception:
+            logger.warning("[ROW] ISO parse failed org=%s name=%s\n%s",
+                           org, spec_name, traceback.format_exc())
+
+        return upd
+
+    # ---- W3C: stable version 채움 + draft_link 비어도 stable(TR)에서 Editor’s Draft 탐색 ----
+    if org == "W3C" and not is_na(stable_link_n):
+        try:
+            sv, sl = parse_w3c_stable(stable_link_n)
+            if sl:
+                upd.stable_link = sl
+            if sv:
+                upd.stable_version = sv
+
+            if is_na(draft_link_n):
+                dv, dl = discover_w3c_draft_from_stable(sl or stable_link_n)
+                if dl and dv:
+                    upd.draft_link = dl
+                    upd.draft_version = dv
+            else:
+                dv = parse_w3c_draft_version(draft_link_n)
+                if dv and has_identifier(dv):
+                    upd.draft_version = dv
+        except Exception:
+            logger.warning("[ROW] W3C discovery failed org=%s name=%s\n%s",
+                           org, spec_name, traceback.format_exc())
+        return upd
+
+    # ---- IETF: stable RFC version 채움 + (보수적) draft-id가 있을 때만 discovery ----
+    if org == "IETF" and not is_na(stable_link_n):
+        try:
+            _, final_stable = normalize_final_url(stable_link_n)
+            if final_stable:
+                upd.stable_link = final_stable
+
+            sv = parse_ietf_stable_from_rfc_url(final_stable or stable_link_n)
+            if sv:
+                upd.stable_version = sv
+
+            if is_na(draft_link_n):
+                base = _ietf_extract_draft_id_from_text(spec_name)
+                if base:
+                    dv, dl = _ietf_datatracker_fetch_latest_revision(base)
+                    if dv and dl:
+                        upd.draft_version = dv
+                        upd.draft_link = dl
+            else:
+                base = _ietf_extract_draft_id_from_text(draft_link_n) or _ietf_extract_draft_id_from_text(spec_name)
+                if base:
+                    dv, dl = _ietf_datatracker_fetch_latest_revision(base)
+                    if dv and dl:
+                        upd.draft_version = dv
+                        upd.draft_link = dl
+        except Exception:
+            logger.warning("[ROW] IETF discovery failed org=%s name=%s\n%s",
+                           org, spec_name, traceback.format_exc())
+        return upd
+
+    # ---- OIDF: stable version 채움 + stable 페이지에 명시된 draft 링크가 있을 때만 ----
+    if org == "OIDF" and not is_na(stable_link_n):
+        try:
+            _, final_stable = normalize_final_url(stable_link_n)
+            if final_stable:
+                upd.stable_link = final_stable
+
+            sv = parse_oidf_stable_from_spec_url(final_stable or stable_link_n)
+            if sv:
+                upd.stable_version = sv
+
+            if is_na(draft_link_n):
+                dv, dl = discover_oidf_draft_from_stable(final_stable or stable_link_n)
+                if dv and dl:
+                    upd.draft_version = dv
+                    upd.draft_link = dl
+        except Exception:
+            logger.warning("[ROW] OIDF discovery failed org=%s name=%s\n%s",
+                           org, spec_name, traceback.format_exc())
+        return upd
+
+    # ---- EU: Draft는 기본 N/A 유지, Stable은 latest 기반으로 최신 버전/링크로 고정 ----
+    if org == "EU" and not is_na(stable_link_n):
+        try:
+            ver, link = discover_eudi_arf_latest_stable(stable_link_n)
+            if link:
+                upd.stable_link = link
+            if ver:
+                upd.stable_version = ver
+        except Exception:
+            logger.warning("[ROW] EU latest discovery failed org=%s name=%s\n%s",
+                           org, spec_name, traceback.format_exc())
+        return upd
+
+    # ---- HL 및 기타: draft discovery 하지 않음. stable 링크 final_url 정규화 정도만(옵션) ----
     if not is_na(stable_link_n):
         try:
-            if org == "W3C" and "w3.org/TR/" in stable_link_n:
-                v, l = parse_w3c_tr_stable(stable_link_n)
-                if v and l:
-                    upd.stable_version, upd.stable_link = v, l
-
-            elif org == "IETF":
-                v, l = parse_rfc_from_link_or_page(stable_link_n)
-                if v and l:
-                    upd.stable_version, upd.stable_link = v, l
-
-            elif org == "OIDF" and "datatracker.ietf.org/doc/html/rfc" in stable_link_n:
-                v, l = parse_rfc_from_link_or_page(stable_link_n)
-                if v and l:
-                    upd.stable_version, upd.stable_link = v, l
-
-            elif org == "EU":
-                ver = parse_semver_from_url(stable_link_n)
-                if ver:
-                    upd.stable_version, upd.stable_link = f"v{ver}", stable_link_n
-
-            elif org == "OIDF" and "openid.net/specs/" in stable_link_n:
-                v, l = parse_oidf_spec_stable(stable_link_n)
-                if v and l:
-                    upd.stable_version, upd.stable_link = v, l
-
-            elif org == "ISO" and "iso.org/standard/" in stable_link_n:
-                suffix, l = parse_iso_stable(stable_link_n)
-                if suffix and l:
-                    upd.stable_version, upd.stable_link = f"{spec_name} ({suffix})", l
-
-            elif org == "HL":
-                v, l = parse_hl_anoncreds_stable(stable_link_n)
-                if v and l:
-                    upd.stable_version, upd.stable_link = v, l
-
+            _, final_stable = normalize_final_url(stable_link_n)
+            if final_stable:
+                upd.stable_link = final_stable
         except Exception:
-            logger.warning("[ROW] stable parse failed org=%s name=%s url=%s\n%s",
-                           org, spec_name, stable_link_n, traceback.format_exc())
-
-    # --- Draft ---
-    if not is_na(draft_link_n):
-        try:
-            if org == "W3C":
-                if "w3c.github.io" in draft_link_n:
-                    v, l = parse_w3c_ed_draft(draft_link_n)
-                    if v and l:
-                        upd.draft_version, upd.draft_link = v, l
-                elif "w3.org/TR/" in draft_link_n:
-                    v, l = parse_w3c_tr_stable(draft_link_n)
-                    if v and l:
-                        upd.draft_version, upd.draft_link = v, l
-
-            elif org == "IETF":
-                v, l = parse_ietf_draft_from_datatracker(draft_link_n)
-                if v and l:
-                    upd.draft_version, upd.draft_link = v, l
-
-            elif org == "EU":
-                ver = parse_semver_from_url(draft_link_n)
-                if ver:
-                    upd.draft_version, upd.draft_link = f"v{ver} (Draft)", draft_link_n
-
-            elif org == "ISO" and "iso.org/standard/" in draft_link_n:
-                # ✅ ISO Draft Version은 링크가 있는 이상 N/A면 안 됨.
-                v, l = parse_iso_draft(draft_link_n, spec_name)
-                if v and l:
-                    upd.draft_version, upd.draft_link = v, l
-
-        except Exception:
-            logger.warning("[ROW] draft parse failed org=%s name=%s url=%s\n%s",
-                           org, spec_name, draft_link_n, traceback.format_exc())
+            pass
 
     return upd
 
 
-# =========================
+# -------------------------
 # Validator / Finalizer
-# =========================
+# -------------------------
 
-def validate_and_finalize(existing: Dict[str, str], upd: RowUpdate) -> RowUpdate:
+def validate_and_finalize(existing: Dict[str, str], upd: RowUpdate, org: str) -> RowUpdate:
     cur_stable_v = norm_na(existing.get("Stable Version"))
     cur_stable_l = norm_na(existing.get("Stable Version Link"))
     cur_draft_v = norm_na(existing.get("Draft Version"))
@@ -876,7 +992,12 @@ def validate_and_finalize(existing: Dict[str, str], upd: RowUpdate) -> RowUpdate
     cand_draft_l = norm_na(upd.draft_link) if upd.draft_link is not None else cur_draft_l
 
     new_stable_l = choose_link_seed_protected(cur_stable_l, cand_stable_l)
-    new_draft_l = choose_link_seed_protected(cur_draft_l, cand_draft_l)
+
+    # ISO의 Draft Link는 seed-protect가 아니라 "최신 discovery 우선"
+    if org == "ISO":
+        new_draft_l = cand_draft_l if not is_na(cand_draft_l) else cur_draft_l
+    else:
+        new_draft_l = choose_link_seed_protected(cur_draft_l, cand_draft_l)
 
     new_stable_v = choose_value_no_degrade(cur_stable_v, cand_stable_v)
     new_draft_v = choose_value_no_degrade(cur_draft_v, cand_draft_v)
@@ -884,17 +1005,20 @@ def validate_and_finalize(existing: Dict[str, str], upd: RowUpdate) -> RowUpdate
     if is_na(new_stable_l):
         new_stable_v = "N/A"
 
-    # Draft 규칙:
-    # - 링크가 N/A면 버전도 N/A
-    # - 링크가 있어도 식별자 없으면 버전은 N/A 유지
     if is_na(new_draft_l):
         new_draft_v = "N/A"
     else:
-        if is_na(new_draft_v) or not has_identifier(new_draft_v):
-            new_draft_v = "N/A"
-
-    if not is_na(new_draft_v) and is_na(new_draft_l):
-        new_draft_v = "N/A"
+        # draft 링크가 있어도 식별자 없으면 Draft 자체 인정하지 않음 → 둘 다 N/A
+        # (OIDF draft-XX는 has_identifier로 잡히지 않으니 OIDF는 별도 허용)
+        if org == "OIDF":
+            ok = bool(re.search(r"\bdraft-\d{1,3}\b", new_draft_v, re.IGNORECASE)) or has_identifier(new_draft_v)
+            if not ok:
+                new_draft_v = "N/A"
+                new_draft_l = "N/A"
+        else:
+            if is_na(new_draft_v) or not has_identifier(new_draft_v):
+                new_draft_v = "N/A"
+                new_draft_l = "N/A"
 
     return RowUpdate(
         stable_version=new_stable_v,
@@ -904,9 +1028,9 @@ def validate_and_finalize(existing: Dict[str, str], upd: RowUpdate) -> RowUpdate
     )
 
 
-# =========================
-# CSV / README Update
-# =========================
+# -------------------------
+# CSV / README
+# -------------------------
 
 def load_csv_rows(path: str) -> Tuple[List[str], List[Dict[str, str]]]:
     with open(path, "r", encoding="utf-8") as f:
@@ -930,11 +1054,6 @@ def update_readme_changelog(
     diffs_by_row: List[Tuple[str, str, List[str]]],
     content_changes_by_row: List[Tuple[str, str, List[str]]],
 ) -> None:
-    """
-    README 변경내역을 '버전 변경'과 'content diff'를 분리해서 기록한다.
-    - Version updates: 펼쳐진 상태로 (가독성 우선)
-    - Content diffs: <details>로 접어서 (README 지저분함 방지)
-    """
     if not diffs_by_row and not content_changes_by_row:
         return
     if not os.path.exists(README_PATH):
@@ -985,9 +1104,9 @@ def update_readme_changelog(
     safe_write_text(README_PATH, new_readme)
 
 
-# =========================
+# -------------------------
 # Main
-# =========================
+# -------------------------
 
 def main() -> int:
     log_file = setup_logging()
@@ -1003,11 +1122,6 @@ def main() -> int:
         logger.info("[ENV] python=%s", sys.version.replace("\n", " "))
         logger.info("[ENV] requests=%s bs4=%s", getattr(requests, "__version__", "unknown"),
                     getattr(__import__("bs4"), "__version__", "unknown"))
-        try:
-            import lxml  # noqa
-            logger.info("[ENV] lxml=installed")
-        except Exception:
-            logger.info("[ENV] lxml=NOT installed (will fallback to html.parser)")
     except Exception:
         logger.error("[ENV] dump failed\n%s", traceback.format_exc())
 
@@ -1030,9 +1144,6 @@ def main() -> int:
     diffs_for_readme: List[Tuple[str, str, List[str]]] = []
     content_changes_for_readme: List[Tuple[str, str, List[str]]] = []
 
-    content_status_counts = {"baseline": 0, "unchanged": 0, "changed": 0}
-    content_diff_files = 0
-
     logger.info("[RUN] rows=%d", len(rows))
 
     for idx, row in enumerate(rows, start=1):
@@ -1044,67 +1155,37 @@ def main() -> int:
         stable_link = row.get("Stable Version Link", "")
         draft_link = row.get("Draft Version Link", "")
 
-        logger.debug("[ROW] #%d org=%s name=%s stable_link=%s draft_link=%s",
-                     idx, org, name, stable_link, draft_link)
+        # (A) 현재 CSV 값 기준 snapshot/diff
+        for link in [stable_link, draft_link]:
+            u = norm_na(norm_url(link))
+            if not is_na(u):
+                try:
+                    check_and_record_content_change(u)
+                except Exception:
+                    logger.warning("[WARN] content snapshot failed url=%s\n%s", u, traceback.format_exc())
 
-        content_notes: List[str] = []
-        logs_changed = False
-
-        stable_url = norm_na(stable_link)
-        if not is_na(stable_url):
-            try:
-                status, diff_rel = check_and_record_content_change(stable_url)
-                if status in content_status_counts:
-                    content_status_counts[status] += 1
-
-                if status in ("baseline", "changed"):
-                    logs_changed = True
-                    changed_any = True
-
-                if diff_rel:
-                    content_diff_files += 1
-
-                if status == "changed" and diff_rel:
-                    content_notes.append(f"changed stable: {diff_rel}")
-                if status == "baseline" and diff_rel:
-                    content_notes.append(f"baseline stable: {diff_rel}")
-
-            except Exception as e:
-                logger.warning("[WARN] stable content snapshot failed: %s err=%s\n%s",
-                               stable_url, repr(e), traceback.format_exc())
-
-        draft_url = norm_na(draft_link)
-        if not is_na(draft_url):
-            try:
-                status, diff_rel = check_and_record_content_change(draft_url)
-                if status in content_status_counts:
-                    content_status_counts[status] += 1
-
-                if status in ("baseline", "changed"):
-                    logs_changed = True
-                    changed_any = True
-
-                if diff_rel:
-                    content_diff_files += 1
-
-                if status == "changed" and diff_rel:
-                    content_notes.append(f"changed draft: {diff_rel}")
-                if status == "baseline" and diff_rel:
-                    content_notes.append(f"baseline draft: {diff_rel}")
-
-            except Exception as e:
-                logger.warning("[WARN] draft content snapshot failed: %s err=%s\n%s",
-                               draft_url, repr(e), traceback.format_exc())
-
-        if content_notes:
-            content_changes_for_readme.append((org, name, content_notes))
-
-        if logs_changed:
-            changed_any = True
-
-        # --- 버전/링크 자동 갱신 로직 ---
+        # (B) 업데이트 계산
         upd_raw = compute_update_for_row(org, name, stable_link, draft_link)
-        upd = validate_and_finalize(before_raw, upd_raw)
+
+        # (C) 같은 run에서 새로 발견된 stable/draft 링크 snapshot 추가(유용)
+        try:
+            discovered_stable = norm_na(norm_url(upd_raw.stable_link or ""))
+            if not is_na(discovered_stable):
+                check_and_record_content_change(discovered_stable)
+        except Exception:
+            logger.warning("[WARN] discovered stable snapshot failed url=%s\n%s",
+                           (upd_raw.stable_link or ""), traceback.format_exc())
+
+        try:
+            discovered_draft = norm_na(norm_url(upd_raw.draft_link or ""))
+            if not is_na(discovered_draft):
+                check_and_record_content_change(discovered_draft)
+        except Exception:
+            logger.warning("[WARN] discovered draft snapshot failed url=%s\n%s",
+                           (upd_raw.draft_link or ""), traceback.format_exc())
+
+        # (D) validate/finalize
+        upd = validate_and_finalize(before_raw, upd_raw, org)
 
         row["Stable Version"] = norm_na(upd.stable_version)
         row["Stable Version Link"] = norm_na(upd.stable_link)
@@ -1123,37 +1204,20 @@ def main() -> int:
             if b != a:
                 diffs.append(f"{col}: {b or '(empty)'} → {a}")
 
-        core_changed = False
-        if "핵심 변경 내용" in fieldnames:
-            b_core = (before_raw.get("핵심 변경 내용", "") or "").strip()
-            a_core = (row.get("핵심 변경 내용", "") or "").strip()
-            core_changed = (b_core != a_core)
-
-        if diffs or core_changed:
+        if diffs:
             changed_any = True
             csv_changed_any = True
-            if diffs:
-                diffs_for_readme.append((org, name, diffs))
+            diffs_for_readme.append((org, name, diffs))
 
     if changed_any:
         if csv_changed_any:
             write_csv_rows(CSV_PATH, fieldnames, rows)
             logger.info("[OK] standards.csv updated rows_changed=%d", len(diffs_for_readme))
-
         update_readme_changelog(diffs_for_readme, content_changes_for_readme)
-
-        logger.info("[OK] Updated artifacts. csv_row_changes=%d content_only_changes=%d",
-                    len(diffs_for_readme), len(content_changes_for_readme))
     else:
         logger.info("[OK] No changes detected.")
 
-    logger.info("[INFO] content_status_counts=%s diff_files_created=%d snapshot_dir=%s diff_dir=%s baseline_diff=%s",
-                content_status_counts, content_diff_files, SNAPSHOT_DIR, DIFF_DIR, BASELINE_DIFF)
-
     logger.info("[TREE] LOG_ROOT listing:\n%s", "\n".join(_list_dir_tree(LOG_ROOT, max_lines=250)))
-    logger.info("[TREE] SNAPSHOT_DIR listing:\n%s", "\n".join(_list_dir_tree(SNAPSHOT_DIR, max_lines=250)))
-    logger.info("[TREE] DIFF_DIR listing:\n%s", "\n".join(_list_dir_tree(DIFF_DIR, max_lines=250)))
-
     if log_file:
         logger.info("[DONE] log_file=%s", log_file)
 
