@@ -394,6 +394,9 @@ def has_identifier(s: str) -> bool:
         return True
     if re.search(r"\bdraft-[a-z0-9-]+-\d{1,2}\b", s, re.IGNORECASE):
         return True
+    # ✅ ISO DIS 같은 형태도 identifier로 인정
+    if re.search(r"\bISO/IEC\s+DIS\b", s):
+        return True
     return False
 
 
@@ -410,6 +413,9 @@ def specificity_score(s: str) -> int:
         score += 10
     if re.search(r"(년|월|일)", s):
         score += 5
+    # ISO DIS 포함이면 추가 가점
+    if re.search(r"\bISO/IEC\s+DIS\b", s):
+        score += 30
     score += min(len(s), 200) // 20
     return score
 
@@ -725,81 +731,42 @@ def parse_iso_stable(url: str) -> Tuple[Optional[str], Optional[str]]:
     return None, None
 
 
-def parse_github_latest_commit_date(repo_url: str) -> Optional[str]:
-    repo_url = repo_url.rstrip("/")
-    candidates = [
-        repo_url + "/commits/main/",
-        repo_url + "/commits/master/",
-        repo_url + "/commits/",
-    ]
-    for commits_url in candidates:
-        try:
-            html, _final = http_get(commits_url, return_final_url=True)
-        except Exception:
-            continue
-
-        dt = extract_first(r'<relative-time[^>]+datetime="(\d{4}-\d{2}-\d{2})T', html, re.IGNORECASE)
-        if dt:
-            return dt
-
-        dt2 = extract_first(r'datetime="(\d{4}-\d{2}-\d{2})T', html, re.IGNORECASE)
-        if dt2:
-            return dt2
-
-    return None
-
-
-def parse_hl_anoncreds_page(url: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
-    html, final_url = http_get(url, return_final_url=True)
+def parse_iso_draft(url: str, spec_name: str) -> Tuple[Optional[str], Optional[str]]:
+    """
+    ✅ 개선:
+    - Life cycle에서 날짜 파싱 실패해도,
+      draft 링크가 있는 이상 'DIS'임을 버전으로 기록해야 함 (N/A로 두면 안됨)
+    """
+    html = http_get(url)
     soup = soup_from_html(html)
-    text_one_line = soup.get_text(" ", strip=True)
+    text = soup.get_text("\n", strip=True)
 
-    v_this = extract_first(
-        r"\bThis version\b\s*(?:\(|:)?\s*v([0-9]+\.[0-9]+(\.[0-9]+)?)\s*\)?",
-        text_one_line,
-        re.IGNORECASE,
-    )
-    v_status = extract_first(
-        r"\bSpecification Status\b\s*:\s*v([0-9]+\.[0-9]+(\.[0-9]+)?)\b",
-        text_one_line,
-        re.IGNORECASE,
-    )
+    # 1) Life cycle: 40.20 ... 2026-01-01 ...
+    d = extract_first(r"\b40\.20\s+(\d{4}-\d{2}-\d{2})\b", text)
+    if d:
+        ref = extract_first(r"\b(ISO/IEC\s+DIS\s+[0-9-]+)\b", text)
+        if ref:
+            ref = re.sub(r"\s+", " ", ref.strip())
+            return f"{ref} (DIS ballot initiated: {d})", url
+        return f"ISO/IEC DIS {spec_name.split(':')[0].strip()} (DIS ballot initiated: {d})", url
 
-    stable_ver = None
-    if v_this:
-        stable_ver = f"v{v_this}"
-    elif v_status:
-        stable_ver = f"v{v_status}"
+    # 2) 다른 단계라도 날짜가 있으면 잡기
+    d2 = extract_first(r"\b(20|19)\d{2}-\d{2}-\d{2}\b", text)
+    if d2:
+        ref = extract_first(r"\b(ISO/IEC\s+DIS\s+[0-9-]+)\b", text)
+        if ref:
+            ref = re.sub(r"\s+", " ", ref.strip())
+            return f"{ref} ({d2} ISO Draft)", url
 
-    latest_draft_link = None
-    for a in soup.find_all("a", href=True):
-        href = (a.get("href") or "").strip()
-        if not href:
-            continue
-        if href.startswith("https://github.com/") and "anoncreds/anoncreds-spec" in href:
-            latest_draft_link = href
-            break
+    # 3) ✅ fallback: 페이지 텍스트에서 DIS ref 추출
+    ref2 = extract_first(r"\b(ISO/IEC\s+DIS\s+[0-9-]+)\b", text)
+    if ref2:
+        ref2 = re.sub(r"\s+", " ", ref2.strip())
+        return f"{ref2} (ISO Draft)", url
 
-    return stable_ver, final_url, latest_draft_link
-
-
-def parse_hl_anoncreds_stable(url: str) -> Tuple[Optional[str], Optional[str]]:
-    stable_ver, final_url, _latest = parse_hl_anoncreds_page(url)
-    if stable_ver:
-        return stable_ver, final_url
-    return None, None
-
-
-def discover_hl_anoncreds_draft_from_stable(url: str) -> Tuple[Optional[str], Optional[str]]:
-    _stable_ver, _final_url, latest_draft_link = parse_hl_anoncreds_page(url)
-    if not latest_draft_link:
-        return None, None
-
-    dt = parse_github_latest_commit_date(latest_draft_link)
-    if dt:
-        return f"{dt} (GitHub Draft)", latest_draft_link
-
-    return None, None
+    # 4) ✅ last fallback: 최소 DIS 식별자라도 기록
+    # (ISO draft 링크 존재 = draft 확정)
+    return f"ISO/IEC DIS {spec_name.split(':')[0].strip()} (ISO Draft)", url
 
 
 # =========================
@@ -880,18 +847,15 @@ def compute_update_for_row(org: str, spec_name: str, stable_link: str, draft_lin
                 if ver:
                     upd.draft_version, upd.draft_link = f"v{ver} (Draft)", draft_link_n
 
+            elif org == "ISO" and "iso.org/standard/" in draft_link_n:
+                # ✅ ISO Draft Version은 링크가 있는 이상 N/A면 안 됨.
+                v, l = parse_iso_draft(draft_link_n, spec_name)
+                if v and l:
+                    upd.draft_version, upd.draft_link = v, l
+
         except Exception:
             logger.warning("[ROW] draft parse failed org=%s name=%s url=%s\n%s",
                            org, spec_name, draft_link_n, traceback.format_exc())
-    else:
-        if org == "HL" and not is_na(stable_link_n):
-            try:
-                dv, dl = discover_hl_anoncreds_draft_from_stable(stable_link_n)
-                if dv and dl:
-                    upd.draft_version, upd.draft_link = dv, dl
-            except Exception:
-                logger.warning("[ROW] HL draft discovery failed org=%s name=%s stable_url=%s\n%s",
-                               org, spec_name, stable_link_n, traceback.format_exc())
 
     return upd
 
@@ -920,6 +884,9 @@ def validate_and_finalize(existing: Dict[str, str], upd: RowUpdate) -> RowUpdate
     if is_na(new_stable_l):
         new_stable_v = "N/A"
 
+    # Draft 규칙:
+    # - 링크가 N/A면 버전도 N/A
+    # - 링크가 있어도 식별자 없으면 버전은 N/A 유지
     if is_na(new_draft_l):
         new_draft_v = "N/A"
     else:
@@ -981,13 +948,11 @@ def update_readme_changelog(
 
     today = datetime.now(KST).strftime("%Y-%m-%d")
 
-    # 1) 버전/링크 변경(기존 형식 유지)
     version_lines: List[str] = []
     for org, name, diffs in diffs_by_row:
         joined = "; ".join(diffs)
         version_lines.append(f"- [{org}] {name}: {joined}")
 
-    # 2) content diff (접기)
     content_lines: List[str] = []
     for org, name, notes in content_changes_by_row:
         joined = "; ".join(notes)
@@ -1019,6 +984,7 @@ def update_readme_changelog(
     new_readme = readme[:after_heading_pos] + "\n" + block + readme[after_heading_pos:]
     safe_write_text(README_PATH, new_readme)
 
+
 # =========================
 # Main
 # =========================
@@ -1026,7 +992,6 @@ def update_readme_changelog(
 def main() -> int:
     log_file = setup_logging()
 
-    # 실행 환경 덤프 (Actions에서 경로/권한/파이썬/작업폴더 문제를 바로 잡기 위함)
     try:
         logger.info("[ENV] cwd=%s", os.getcwd())
         logger.info("[ENV] script_dir=%s", os.path.dirname(__file__))
@@ -1038,7 +1003,6 @@ def main() -> int:
         logger.info("[ENV] python=%s", sys.version.replace("\n", " "))
         logger.info("[ENV] requests=%s bs4=%s", getattr(requests, "__version__", "unknown"),
                     getattr(__import__("bs4"), "__version__", "unknown"))
-        # lxml 유무 체크
         try:
             import lxml  # noqa
             logger.info("[ENV] lxml=installed")
@@ -1083,7 +1047,6 @@ def main() -> int:
         logger.debug("[ROW] #%d org=%s name=%s stable_link=%s draft_link=%s",
                      idx, org, name, stable_link, draft_link)
 
-        # ✅ 항상 내용 변경 체크
         content_notes: List[str] = []
         logs_changed = False
 
@@ -1139,7 +1102,7 @@ def main() -> int:
         if logs_changed:
             changed_any = True
 
-        # --- 기존 버전/링크 자동 갱신 로직 ---
+        # --- 버전/링크 자동 갱신 로직 ---
         upd_raw = compute_update_for_row(org, name, stable_link, draft_link)
         upd = validate_and_finalize(before_raw, upd_raw)
 
@@ -1172,7 +1135,6 @@ def main() -> int:
             if diffs:
                 diffs_for_readme.append((org, name, diffs))
 
-    # 파일 쓰기 / README 업데이트
     if changed_any:
         if csv_changed_any:
             write_csv_rows(CSV_PATH, fieldnames, rows)
@@ -1185,11 +1147,9 @@ def main() -> int:
     else:
         logger.info("[OK] No changes detected.")
 
-    # 디버깅 로그: baseline 반복/디렉토리/파일 생성 여부를 최종 확인
     logger.info("[INFO] content_status_counts=%s diff_files_created=%d snapshot_dir=%s diff_dir=%s baseline_diff=%s",
                 content_status_counts, content_diff_files, SNAPSHOT_DIR, DIFF_DIR, BASELINE_DIFF)
 
-    # 디렉토리 트리 덤프 (Actions에서 “진짜 생성됐는지” 확인)
     logger.info("[TREE] LOG_ROOT listing:\n%s", "\n".join(_list_dir_tree(LOG_ROOT, max_lines=250)))
     logger.info("[TREE] SNAPSHOT_DIR listing:\n%s", "\n".join(_list_dir_tree(SNAPSHOT_DIR, max_lines=250)))
     logger.info("[TREE] DIFF_DIR listing:\n%s", "\n".join(_list_dir_tree(DIFF_DIR, max_lines=250)))
@@ -1206,7 +1166,6 @@ if __name__ == "__main__":
     except SystemExit:
         raise
     except Exception:
-        # 최후의 보루: 어떤 예외든 traceback을 남긴다
         try:
             setup_logging()
             logger.critical("[FATAL] uncaught exception\n%s", traceback.format_exc())
