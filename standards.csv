@@ -2,7 +2,7 @@
 W3C,VC Data Model,v2.0 (W3C TR),v2.1 (2025-10-06 Editor's Draft),stable N/A -> v2.0 (W3C TR); draft N/A -> v2.1 (2025-10-06 Editor's Draft),https://www.w3.org/TR/vc-data-model-2.0/,https://w3c.github.io/vc-data-model/
 W3C,Verifiable Credential Data Integrity,v1.0 (W3C TR),v1.1 (2025-08-14 Editor's Draft),stable N/A -> v1.0 (W3C TR); draft N/A -> v1.1 (2025-08-14 Editor's Draft),https://www.w3.org/TR/vc-data-integrity/,https://w3c.github.io/vc-data-integrity/
 W3C,Decentralized Identifiers (DIDs),v1.0 (W3C TR),v1.1 (W3C TR),stable N/A -> v1.0 (W3C TR); draft N/A -> v1.1 (W3C TR),https://www.w3.org/TR/did-core/,https://www.w3.org/TR/did-1.1/
-ISO,ISO/IEC 18013-5:2021,ISO/IEC 18013-5:2021 (ISO Publication: 2021-09),N/A,stable N/A -> ISO/IEC 18013-5:2021 (ISO Publication: 2021-09),https://www.iso.org/standard/69084.html,https://www.iso.org/standard/91081.html
+ISO,ISO/IEC 18013-5:2021,ISO/IEC 18013-5:2021 (ISO Publication: 2021-09),ISO/IEC DIS 18013-5 (DIS ballot initiated: 2026-01-01),draft N/A -> ISO/IEC DIS 18013-5 (DIS ballot initiated: 2026-01-01),https://www.iso.org/standard/69084.html,https://www.iso.org/standard/91081.html
 ISO,ISO/IEC TS 23220-6:2025,ISO/IEC TS 23220-6:2025 (ISO Publication: 2025-10),N/A,stable N/A -> ISO/IEC TS 23220-6:2025 (ISO Publication: 2025-10),https://www.iso.org/standard/86787.html,N/A
 OIDF,The OAuth 2.0 Authorization Framework (RFC 6749),RFC 6749,N/A,stable N/A -> RFC 6749,https://datatracker.ietf.org/doc/html/rfc6749,N/A
 OIDF,OpenID for Verifiable Credential Issuance 1.0,"1.0 (Final, 2025-09-16)",N/A,"stable N/A -> 1.0 (Final, 2025-09-16)",https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html,N/A

@@ -10,6 +10,12 @@
 ### 2026-01-23
 
 #### Version updates
+- [ISO] ISO/IEC 18013-5:2021: Draft Version: N/A → ISO/IEC DIS 18013-5 (DIS ballot initiated: 2026-01-01)
+
+
+### 2026-01-23
+
+#### Version updates
 - [W3C] VC Data Model: Stable Version: N/A → v2.0 (W3C TR); Draft Version: N/A → v2.1 (2025-10-06 Editor's Draft)
 - [W3C] Verifiable Credential Data Integrity: Stable Version: N/A → v1.0 (W3C TR); Draft Version: N/A → v1.1 (2025-08-14 Editor's Draft)
 - [W3C] Decentralized Identifiers (DIDs): Stable Version: N/A → v1.0 (W3C TR); Draft Version: N/A → v1.1 (W3C TR)
