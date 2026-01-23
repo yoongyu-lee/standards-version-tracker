@@ -29,25 +29,33 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r scripts/requirements.txt
 
-      # ✅ snapshots 캐시 복원 (baseline 반복 방지의 핵심)
+      # ✅ 이전 실행 스냅샷 복원 (최신 캐시를 prefix로 찾아 restore)
       - name: Restore snapshots cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: logs/snapshots
-          key: svt-snapshots-${{ github.repository }}-${{ github.ref_name }}
+          key: svt-snapshots-${{ github.repository }}-${{ github.ref_name }}-${{ github.run_id }}
           restore-keys: |
+            svt-snapshots-${{ github.repository }}-${{ github.ref_name }}-
             svt-snapshots-${{ github.repository }}-
 
       - name: Run updater
         run: |
           python scripts/update_standards.py
         env:
-          # ✅ baseline에서도 diff 생성 (첫 실행/캐시 미스 시 README에 diff 섹션 생성 가능)
+          # ✅ baseline에서도 diff 생성 (원치 않으면 "0")
           SVT_BASELINE_DIFF: "1"
           # (선택) 디버깅 상세 로그가 필요하면 1로
           # SVT_DEBUG: "1"
 
-      # ✅ run 로그/디프/스냅샷을 artifact로 보관 (repo를 더럽히지 않으면서도 추적 가능)
+      # ✅ 실행 결과 스냅샷을 "항상" 최신으로 캐시에 저장 (매 run마다 새 key로 저장됨)
+      - name: Save snapshots cache
+        uses: actions/cache/save@v4
+        with:
+          path: logs/snapshots
+          key: svt-snapshots-${{ github.repository }}-${{ github.ref_name }}-${{ github.run_id }}
+
+      # ✅ run 로그/디프/스냅샷을 artifact로 보관 (repo를 더럽히지 않음)
       - name: Upload logs artifact
         if: always()
         uses: actions/upload-artifact@v4
@@ -62,8 +70,8 @@ jobs:
           git config user.name "standards-bot"
           git config user.email "standards-bot@users.noreply.github.com"
 
-          # 커밋 대상(Tracked): CSV/README + diff 파일(README에서 바로 열 수 있게)
-          git add standards.csv README.md logs/diffs
+          # ✅ 커밋 대상(Tracked): CSV/README만 (diff/snapshots는 repo에 저장하지 않음)
+          git add standards.csv README.md
 
           # staged 변경 없으면 종료
           if git diff --cached --quiet; then
