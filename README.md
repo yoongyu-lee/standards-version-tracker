@@ -7,6 +7,12 @@
 
 ## 변경 내역
 
+### 2026-01-24
+
+#### Version updates
+- [EU] EUDI Wallet Architecture and Reference Framework: Stable Version: 2.7.2 → 2.7.3
+
+
 ### 2026-01-23
 
 #### Version updates
