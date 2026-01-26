@@ -8,7 +8,8 @@ standards.csv를 Source of Truth로 사용해 Stable/Draft 버전과 링크를 �
 - Draft Version Link가 비어있거나 N/A여도 stable link 기반으로 Draft discovery 시도
   * W3C: TR stable에서 Editor’s Draft 탐색 + (날짜/버전) 식별자 확보 시에만 Draft 반영
   * ISO: stable에서 Next version under development 링크 탐색(기존 유지)
-  * IETF: (보수적) spec_name 또는 링크에 draft-id가 있을 때만 datatracker 최신 revision 반영
+  * IETF: (보수적) stable 링크가 N/A여도 datatracker 공식 검색으로 draft-id를 찾고,
+           spec_name과 title 유사도가 임계치 이상일 때만 최신 revision 반영 (추정 금지)
   * OIDF: stable(openid.net/specs) 페이지 내부에 "draft-XX" 명시 링크가 있을 때만 Draft 반영
   * EU: Draft는 기본 N/A 유지, Stable은 latest 기반 최신 버전/링크로 고정(옵션: 아래 EU 블록 참고)
   * HL(예: Hyperledger AnonCreds): Draft 자동 discovery 하지 않음
@@ -696,6 +697,136 @@ def _ietf_datatracker_fetch_latest_revision(base_draft_name: str) -> Tuple[Optio
     return draft_version, draft_link
 
 
+def _ietf_norm_tokens(s: str) -> List[str]:
+    """
+    IETF datatracker search 결과를 spec_name에 매칭하기 위한 보수적 토큰화.
+    - 알파넘만 남기고 소문자
+    - 길이 3 미만 토큰 제거(노이즈 감소)
+    """
+    if not s:
+        return []
+    s = re.sub(r"[\u2018\u2019\u201C\u201D]", "'", s)
+    s = s.lower()
+    s = re.sub(r"[^a-z0-9]+", " ", s)
+    toks = [t for t in s.split() if len(t) >= 3]
+    # 너무 흔한 단어 제거(보수적으로 최소만)
+    stop = {"the", "and", "for", "with", "from", "based", "json", "token", "tokens", "verifiable", "credential", "credentials"}
+    return [t for t in toks if t not in stop]
+
+
+def _ietf_title_from_doc_page(doc_url: str) -> str:
+    """
+    datatracker doc 페이지에서 title/h1 등을 뽑아 매칭에 사용.
+    실패해도 빈 문자열 반환.
+    """
+    try:
+        html = http_get(doc_url)
+    except Exception:
+        return ""
+    soup = soup_from_html(html)
+    h1 = soup.find("h1")
+    if h1:
+        t = h1.get_text(" ", strip=True)
+        if t:
+            return t
+    if soup.title:
+        t = soup.title.get_text(" ", strip=True)
+        if t:
+            return t
+    # fallback: 상단 텍스트 일부
+    txt = soup.get_text("\n", strip=True)
+    return (txt.splitlines()[0] if txt else "")[:200]
+
+
+def _ietf_match_score(spec_name: str, title: str) -> int:
+    """
+    매우 보수적인 매칭 점수:
+    - spec_name 토큰이 title에 몇 개나 등장하는지
+    - 0이면 불일치 취급
+    """
+    s_toks = _ietf_norm_tokens(spec_name)
+    t_toks = set(_ietf_norm_tokens(title))
+    if not s_toks or not t_toks:
+        return 0
+    hits = sum(1 for tok in set(s_toks) if tok in t_toks)
+    return hits
+
+
+def discover_ietf_draft_from_name(spec_name: str) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Stable/Draft 링크가 N/A인 IETF 행을 위한 보수적 discovery:
+    1) datatracker 공식 검색(doc search)에서 draft-ietf-* 후보를 수집
+    2) 후보 doc 페이지 제목(title/h1)이 spec_name과 유사(토큰 hit >= 2)할 때만 채택
+    3) 채택된 base name에 대해 최신 revision(-NN)으로 확정하여 (draft_version, draft_link) 반환
+
+    원칙:
+    - 매칭이 애매하면 절대 채우지 않음(N/A 유지)
+    """
+    q = (spec_name or "").strip()
+    if not q:
+        return None, None
+
+    search_url = "https://datatracker.ietf.org/doc/search/?name=" + quote(q)
+    try:
+        html, final_url = http_get(search_url, return_final_url=True)
+    except Exception:
+        return None, None
+
+    # 검색 결과에서 draft-ietf-... base 후보 추출
+    # - /doc/draft-ietf-foo/ 형태 또는 draft-ietf-foo-12 형태가 섞일 수 있어 둘 다 처리
+    candidates: List[str] = []
+
+    # (1) 링크 기반
+    soup = soup_from_html(html)
+    for a in soup.find_all("a", href=True):
+        href = (a.get("href") or "").strip()
+        if not href:
+            continue
+        u = norm_url(urljoin(final_url, href))
+        m = re.search(r"datatracker\.ietf\.org/doc/(draft-ietf-[a-z0-9-]+)/?$", u, re.IGNORECASE)
+        if m:
+            candidates.append(m.group(1).lower())
+
+    # (2) 텍스트 기반(혹시 링크 구조가 바뀌는 경우)
+    m2 = re.findall(r"\b(draft-ietf-[a-z0-9-]+)-\d{1,2}\b", html, re.IGNORECASE)
+    candidates.extend([x.lower() for x in m2])
+
+    # 중복 제거
+    uniq: List[str] = []
+    seen = set()
+    for c in candidates:
+        c = c.strip().lower()
+        if not c or c in seen:
+            continue
+        seen.add(c)
+        uniq.append(c)
+
+    if not uniq:
+        return None, None
+
+    # 후보를 제목 매칭으로 필터링 (보수적으로 hit >= 2)
+    best_base = None
+    best_score = 0
+    for base in uniq[:20]:  # 너무 많은 후보는 제한
+        doc_url = f"https://datatracker.ietf.org/doc/{quote(base)}/"
+        title = _ietf_title_from_doc_page(doc_url)
+        score = _ietf_match_score(spec_name, title)
+        logger.debug("[IETF] search-cand base=%s score=%s title=%s", base, score, title[:120])
+        if score > best_score:
+            best_score = score
+            best_base = base
+
+    # 임계치(보수): 2개 이상 토큰이 title과 매칭될 때만 채택
+    if not best_base or best_score < 2:
+        logger.info("[IETF] search no-confident-match spec_name=%s best_score=%s", spec_name, best_score)
+        return None, None
+
+    dv, dl = _ietf_datatracker_fetch_latest_revision(best_base)
+    if dv and dl:
+        return dv, dl
+    return None, None
+
+
 def parse_oidf_stable_from_spec_url(url: str) -> Optional[str]:
     """
     OIDF stable spec URL에서 "-1_0.html" 같은 버전을 "1.0" 형태로 추출
@@ -900,21 +1031,32 @@ def compute_update_for_row(org: str, spec_name: str, stable_link: str, draft_lin
                            org, spec_name, traceback.format_exc())
         return upd
 
-    # ---- IETF: stable RFC version 채움 + (보수적) draft-id가 있을 때만 discovery ----
-    if org == "IETF" and not is_na(stable_link_n):
+    # ---- IETF: stable RFC version 채움 + (보수적) draft-id 또는 datatracker 검색으로 discovery ----
+    if org == "IETF":
         try:
-            _, final_stable = normalize_final_url(stable_link_n)
-            if final_stable:
-                upd.stable_link = final_stable
+            # (1) stable이 있으면 final_url 정규화 + RFC version 채움
+            if not is_na(stable_link_n):
+                _, final_stable = normalize_final_url(stable_link_n)
+                if final_stable:
+                    upd.stable_link = final_stable
 
-            sv = parse_ietf_stable_from_rfc_url(final_stable or stable_link_n)
-            if sv:
-                upd.stable_version = sv
+                sv = parse_ietf_stable_from_rfc_url(final_stable or stable_link_n)
+                if sv:
+                    upd.stable_version = sv
 
+            # (2) draft discovery
             if is_na(draft_link_n):
+                # 2-A: spec_name에 draft-id가 있으면 그걸 우선
                 base = _ietf_extract_draft_id_from_text(spec_name)
                 if base:
                     dv, dl = _ietf_datatracker_fetch_latest_revision(base)
+                    if dv and dl:
+                        upd.draft_version = dv
+                        upd.draft_link = dl
+                else:
+                    # 2-B: stable/draft 모두 N/A인 경우도 처리하기 위해
+                    # datatracker 공식 검색으로만(보수적) 발견 시 반영
+                    dv, dl = discover_ietf_draft_from_name(spec_name)
                     if dv and dl:
                         upd.draft_version = dv
                         upd.draft_link = dl
@@ -925,6 +1067,7 @@ def compute_update_for_row(org: str, spec_name: str, stable_link: str, draft_lin
                     if dv and dl:
                         upd.draft_version = dv
                         upd.draft_link = dl
+
         except Exception:
             logger.warning("[ROW] IETF discovery failed org=%s name=%s\n%s",
                            org, spec_name, traceback.format_exc())
