@@ -101,6 +101,12 @@
   - Draft 링크가 비어 있으면 TR 페이지에서 **"Editor's Draft" 링크**를 검색합니다.
   - Draft 버전은 **날짜/버전 등의 식별자**가 확인될 때만 기록합니다.
   - Draft 링크가 이미 존재하면 해당 페이지에서 날짜/버전을 추출합니다.
+  - 파싱 강화 사항:
+    - `h1/title`에서 `vX.Y(.Z)` 우선 확인, 필요 시 제한적 semver(`X.Y[.Z]`) 허용
+    - `<meta name|property>`(예: `dcterms.modified`, `dc.date`)와 `<time datetime>`에서 `YYYY-MM-DD` 탐지
+    - 본문 내 “This version/Last updated/Modified” 인접 라인의 `YYYY-MM-DD` 보조 탐지
+    - 위가 모두 실패 시 HTTP `Last-Modified` 헤더를 날짜로 변환해 사용
+    - 결합 포맷: 가능한 경우 `vX.Y (YYYY-MM-DD Editor's Draft)` 형태로 기록
 
 ### ISO
 - **Stable**
@@ -131,7 +137,18 @@
   - 가능한 경우 `/X.Y.Z/` 형태의 **버전 고정 URL**로 정규화합니다.
   - 페이지 내용에서 `Change Log vX.Y.Z` 형식의 정보도 함께 검색합니다.
 
-### HL 및 기타
+### HL (AnonCreds)
+- **Stable**
+  - Stable 링크는 최종 URL로 정규화만 수행합니다(버전 값은 기본 채움 대상이 아님).
+- **Draft**
+  - AnonCreds 스펙 페이지(`anoncreds.github.io/anoncreds-spec` 등)로 판별되면 해당 페이지 자체를 Draft로 간주합니다.
+  - 드래프트 식별 규칙(안전 우선):
+    - “Specification Status: vX.Y Draft” 텍스트가 있으면 `vX.Y Draft`로 기록
+    - 위가 없으면 문서의 명시 버전 토큰(예: `AnonCreds v1.0`, `Version v1.0`)을 `vX.Y Draft`로 기록
+    - 둘 다 없으면 페이지 내 GitHub 저장소 링크의 최신 커밋 날짜를 조회해 `YYYY-MM-DD Draft`로 기록
+    - 본문 임의의 날짜(예: 예시 JSON의 `collected_on`)는 사용하지 않음
+
+### 기타
 - Draft 자동 발견 기능을 제공하지 않습니다.
 - Stable 링크의 최종 URL 정리(리다이렉트 반영) 정도만 수행합니다.
 
