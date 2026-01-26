@@ -46,6 +46,7 @@ from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 from urllib.parse import urljoin, urlparse, urlunparse, quote
 from zoneinfo import ZoneInfo
+from email.utils import parsedate_to_datetime
 
 import requests
 from bs4 import BeautifulSoup
@@ -474,6 +475,86 @@ class RowUpdate:
 # Parsers / Discovery
 # -------------------------
 
+def parse_hl_anoncreds_draft(draft_url: str) -> Optional[str]:
+    """
+    Hyperledger AnonCreds spec 페이지(gh-pages)에서 버전 식별자를 찾아 Draft Version을 만든다.
+    - 규칙: Draft Version에는 식별자(버전/날짜 등)가 반드시 포함되어야 함.
+    - 안전 개선: 본문 임의의 YYYY-MM-DD(예: 예시 JSON의 collected_on 등)는 더 이상 사용하지 않음.
+      GitHub repo 최신 커밋 날짜 또는 명시적 버전 토큰만 허용.
+    """
+    try:
+        html = http_get(draft_url)
+    except Exception:
+        return None
+
+    soup = soup_from_html(html)
+
+    # 0) 우선순위: "Specification Status: vX.Y Draft" 형태
+    text_one_line = soup.get_text(" ", strip=True)
+    m_status = re.search(
+        r"\bSpecification\s+Status\b\s*:\s*v?(\d+\.\d+(?:\.\d+)?)\s*(?:Draft)?",
+        text_one_line,
+        re.IGNORECASE,
+    )
+    if m_status:
+        v = m_status.group(1)
+        return f"v{v} Draft"
+
+    # 1) v1.0 / 1.0 / 1.0.0 등 명시 버전 토큰 (제목/본문)
+    m_named = re.search(r"\bAnonCreds\s+v?(\d+\.\d+(?:\.\d+)?)\b", html, re.IGNORECASE)
+    if m_named:
+        return f"v{m_named.group(1)} Draft"
+
+    m_ver = re.search(r"\bVersion\s+v?(\d+\.\d+(?:\.\d+)?)\b", html, re.IGNORECASE)
+    if m_ver:
+        return f"v{m_ver.group(1)} Draft"
+
+    # 2) 안전한 날짜 근거: 페이지 내 GitHub repo(anoncreds/anoncreds-spec) 링크를 찾아
+    #    최신 커밋 날짜를 Draft 식별자로 사용
+    repo_url = None
+    for a in soup.find_all("a", href=True):
+        href = (a.get("href") or "").strip()
+        if not href:
+            continue
+        if "github.com" in href and re.search(r"/anoncreds(?:-|\.)?/anoncreds-spec", href, re.IGNORECASE):
+            repo_url = href
+            break
+
+    if repo_url:
+        dt = parse_github_latest_commit_date(repo_url.rstrip("/"))
+        if dt:
+            return f"{dt} Draft"
+
+    return None
+
+
+def parse_github_latest_commit_date(repo_url: str) -> Optional[str]:
+    """
+    GitHub repo의 최신 커밋 날짜를 YYYY-MM-DD로 추출.
+    - API 없이 commits 페이지의 datetime 속성 파싱
+    """
+    repo_url = repo_url.rstrip("/")
+    candidates = [
+        repo_url + "/commits/main/",
+        repo_url + "/commits/master/",
+        repo_url + "/commits/",
+    ]
+    for commits_url in candidates:
+        try:
+            html, _final = http_get(commits_url, return_final_url=True)
+        except Exception:
+            continue
+
+        m1 = re.search(r'<relative-time[^>]+datetime="(\d{4}-\d{2}-\d{2})T', html, re.IGNORECASE)
+        if m1:
+            return m1.group(1)
+        m2 = re.search(r'datetime="(\d{4}-\d{2}-\d{2})T', html, re.IGNORECASE)
+        if m2:
+            return m2.group(1)
+
+    return None
+
+
 def parse_iso_stable(url: str, spec_name: str) -> Tuple[Optional[str], Optional[str]]:
     html, final_url = http_get(url, return_final_url=True)
     soup = soup_from_html(html)
@@ -572,19 +653,88 @@ def parse_w3c_draft_version(draft_url: str) -> Optional[str]:
     W3C Editor’s Draft(또는 WD) 페이지에서 날짜/버전 식별자를 찾아
     'YYYY-MM-DD Editor's Draft' 같은 형태로 반환.
     """
+    # 강화: 메타 태그, <time>, 본문 문구, HTTP Last-Modified 헤더까지 폭넓게 탐지
     try:
-        html = http_get(draft_url)
+        html, headers = http_get(draft_url, return_headers=True)
     except Exception:
         return None
 
-    m = re.search(r"\b(20\d{2}-\d{2}-\d{2})\b", html)
-    if m:
-        return f"{m.group(1)} Editor's Draft"
+    soup = soup_from_html(html)
 
-    m2 = re.search(r"\bv?\d+\.\d+(?:\.\d+)?\b", html, re.IGNORECASE)
-    if m2:
-        return f"{m2.group(0)} Editor's Draft"
+    # 1) 버전 탐지: h1/title에서 vX.Y(.Z) 우선, 없으면 제한적 semver(X.Y[.Z])
+    title = (soup.title.get_text(" ", strip=True) if soup.title else "").strip()
+    h1 = soup.find("h1")
+    h1txt = h1.get_text(" ", strip=True) if h1 else ""
 
+    ver = (
+        extract_first(r"\bv([0-9]+(\.[0-9]+){1,2})\b", h1txt, re.IGNORECASE)
+        or extract_first(r"\bv([0-9]+(\.[0-9]+){1,2})\b", title, re.IGNORECASE)
+    )
+    if not ver:
+        ver = (
+            extract_first(r"\b([0-9]{1,2}\.[0-9]{1,2}(?:\.[0-9]{1,2})?)\b", h1txt)
+            or extract_first(r"\b([0-9]{1,2}\.[0-9]{1,2}(?:\.[0-9]{1,2})?)\b", title)
+        )
+
+    # 2) 날짜 탐지 우선순위:
+    #   - meta[name|property in {dcterms.modified,dcterms.issued,dc.date,dc.modified,last-modified}]
+    #   - <time datetime="YYYY-MM-DD"> 또는 내용 텍스트 내 YYYY-MM-DD
+    #   - 본문 라인 중 "This version|Last updated|Updated|Modified" 근처의 YYYY-MM-DD
+    #   - HTTP Last-Modified 헤더 파싱
+    dt: Optional[str] = None
+    meta_keys = {"dcterms.modified", "dcterms.issued", "dc.date", "dc.modified", "last-modified"}
+    for m in soup.find_all("meta"):
+        name = (m.get("name") or "").strip().lower()
+        prop = (m.get("property") or "").strip().lower()
+        key = name or prop
+        if key in meta_keys:
+            content = (m.get("content") or "").strip()
+            d = extract_first(r"\b(\d{4}-\d{2}-\d{2})\b", content)
+            if d:
+                dt = d
+                break
+
+    if not dt:
+        for t in soup.find_all("time"):
+            datetime_attr = (t.get("datetime") or "").strip()
+            d = extract_first(r"\b(\d{4}-\d{2}-\d{2})\b", datetime_attr)
+            if d:
+                dt = d
+                break
+            txt = t.get_text(" ", strip=True)
+            d = extract_first(r"\b(\d{4}-\d{2}-\d{2})\b", txt)
+            if d:
+                dt = d
+                break
+
+    if not dt:
+        body_text = soup.get_text("\n", strip=True)
+        for line in body_text.splitlines():
+            l = line.strip()
+            if not l:
+                continue
+            if re.search(r"\b(This version|Last updated|Updated|Modified)\b", l, re.IGNORECASE):
+                d = extract_first(r"\b(\d{4}-\d{2}-\d{2})\b", l)
+                if d:
+                    dt = d
+                    break
+
+    if not dt:
+        lm = (headers.get("Last-Modified") or "").strip()
+        if lm:
+            try:
+                dt_obj = parsedate_to_datetime(lm)
+                dt = dt_obj.date().isoformat()
+            except Exception:
+                dt = None
+
+    # 3) 출력 조합(식별자 필수는 상위 validate 단계에서 확인)
+    if ver and dt:
+        return f"v{ver} ({dt} Editor's Draft)"
+    if dt:
+        return f"{dt} (Editor's Draft)"
+    if ver:
+        return f"v{ver} (Editor's Draft)"
     return None
 
 
@@ -751,6 +901,18 @@ def _ietf_match_score(spec_name: str, title: str) -> int:
     hits = sum(1 for tok in set(s_toks) if tok in t_toks)
     return hits
 
+def discover_ietf_draft_deterministic(spec_name: str) -> Tuple[Optional[str], Optional[str]]:
+    """
+    SD-JWT VC 전용 deterministic discovery (OAuth WG 규칙 기반)
+    """
+    name = (spec_name or "").lower()
+
+    if "sd-jwt" in name and "verifiable" in name:
+        base = "draft-ietf-oauth-sd-jwt-vc"
+    else:
+        return None, None
+
+    return _ietf_datatracker_fetch_latest_revision(base)
 
 def discover_ietf_draft_from_name(spec_name: str) -> Tuple[Optional[str], Optional[str]]:
     """
@@ -977,6 +1139,32 @@ def compute_update_for_row(org: str, spec_name: str, stable_link: str, draft_lin
 
     upd = RowUpdate()
 
+    # ---- HL(AnonCreds): Stable은 없고 Draft만 존재하는 케이스 처리 ----
+    if org == "HL" and not is_na(stable_link_n):
+        try:
+            # stable 링크는 final_url로 정규화
+            _, final_stable = normalize_final_url(stable_link_n)
+            final_stable = final_stable or stable_link_n
+
+            # AnonCreds spec 페이지면, 해당 페이지를 Draft로 간주하고 식별자 확보 시에만 반영
+            if re.search(r"\banoncreds\b", spec_name, re.IGNORECASE) or re.search(
+                r"(anoncreds\.github\.io/anoncreds-spec|hyperledger\.github\.io/anoncreds-spec)",
+                final_stable,
+                re.IGNORECASE,
+            ):
+                dv = parse_hl_anoncreds_draft(final_stable)
+                if dv and has_identifier(dv):
+                    upd.draft_version = dv
+                    upd.draft_link = final_stable
+
+            # stable link는 기존 정책대로 "정규화만" (stable version은 채우지 않음)
+            upd.stable_link = final_stable
+
+        except Exception:
+            logger.warning("[ROW] HL(AnonCreds) parse failed org=%s name=%s\n%s",
+                           org, spec_name, traceback.format_exc())
+        return upd
+
     # ---- ISO: stable에서 next draft 링크를 항상 최신화 ----
     if org == "ISO" and not is_na(stable_link_n) and "iso.org/standard/" in stable_link_n:
         try:
@@ -1031,10 +1219,10 @@ def compute_update_for_row(org: str, spec_name: str, stable_link: str, draft_lin
                            org, spec_name, traceback.format_exc())
         return upd
 
-    # ---- IETF: stable RFC version 채움 + (보수적) draft-id 또는 datatracker 검색으로 discovery ----
+    # ---- IETF: stable RFC version 채움 + draft discovery ----
     if org == "IETF":
         try:
-            # (1) stable이 있으면 final_url 정규화 + RFC version 채움
+            # (1) Stable RFC 처리
             if not is_na(stable_link_n):
                 _, final_stable = normalize_final_url(stable_link_n)
                 if final_stable:
@@ -1044,34 +1232,32 @@ def compute_update_for_row(org: str, spec_name: str, stable_link: str, draft_lin
                 if sv:
                     upd.stable_version = sv
 
-            # (2) draft discovery
+            # (2) Draft discovery
             if is_na(draft_link_n):
-                # 2-A: spec_name에 draft-id가 있으면 그걸 우선
-                base = _ietf_extract_draft_id_from_text(spec_name)
-                if base:
-                    dv, dl = _ietf_datatracker_fetch_latest_revision(base)
-                    if dv and dl:
-                        upd.draft_version = dv
-                        upd.draft_link = dl
+                # 2-A: SD-JWT VC deterministic 특례 (OAuth WG)
+                dv, dl = discover_ietf_draft_deterministic(spec_name)
+                if dv and dl:
+                    upd.draft_version = dv
+                    upd.draft_link = dl
                 else:
-                    # 2-B: stable/draft 모두 N/A인 경우도 처리하기 위해
-                    # datatracker 공식 검색으로만(보수적) 발견 시 반영
-                    dv, dl = discover_ietf_draft_from_name(spec_name)
-                    if dv and dl:
-                        upd.draft_version = dv
-                        upd.draft_link = dl
-            else:
-                base = _ietf_extract_draft_id_from_text(draft_link_n) or _ietf_extract_draft_id_from_text(spec_name)
-                if base:
-                    dv, dl = _ietf_datatracker_fetch_latest_revision(base)
-                    if dv and dl:
-                        upd.draft_version = dv
-                        upd.draft_link = dl
+                    # 2-B: 기존 보수적 검색 fallback
+                    base = _ietf_extract_draft_id_from_text(spec_name)
+                    if base:
+                        dv, dl = _ietf_datatracker_fetch_latest_revision(base)
+                        if dv and dl:
+                            upd.draft_version = dv
+                            upd.draft_link = dl
+                    else:
+                        dv, dl = discover_ietf_draft_from_name(spec_name)
+                        if dv and dl:
+                            upd.draft_version = dv
+                            upd.draft_link = dl
 
         except Exception:
             logger.warning("[ROW] IETF discovery failed org=%s name=%s\n%s",
-                           org, spec_name, traceback.format_exc())
+                        org, spec_name, traceback.format_exc())
         return upd
+
 
     # ---- OIDF: stable version 채움 + stable 페이지에 명시된 draft 링크가 있을 때만 ----
     if org == "OIDF" and not is_na(stable_link_n):
