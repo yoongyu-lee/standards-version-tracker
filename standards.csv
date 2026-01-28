@@ -1,13 +1,13 @@
 단체,표준명 (항목),Stable Version,Draft Version,핵심 변경 내용,Stable Version Link,Draft Version Link
-W3C,VC Data Model,v2.0,v2.1 (2025-10-06 Editor's Draft),stable N/A -> v2.0; draft 2025-01-19 Editor's Draft -> v2.1 (2025-10-06 Editor's Draft),https://www.w3.org/TR/vc-data-model-2.0/,https://w3c.github.io/vc-data-model/
-W3C,Verifiable Credential Data Integrity,v1.0,v1.1 (2025-08-14 Editor's Draft),stable N/A -> v1.0; draft 2025-01-19 Editor's Draft -> v1.1 (2025-08-14 Editor's Draft),https://www.w3.org/TR/vc-data-integrity/,https://w3c.github.io/vc-data-integrity/
-W3C,Decentralized Identifiers (DIDs),v1.0,v1.1 (2026-01-24 Editor's Draft),stable N/A -> v1.0; draft 2026-01-30 Editor's Draft -> v1.1 (2026-01-24 Editor's Draft),https://www.w3.org/TR/did-core/,https://www.w3.org/TR/did-1.1/
+W3C,VC Data Model,N/A,2025-01-19 Editor's Draft,draft N/A -> 2025-01-19 Editor's Draft,https://www.w3.org/TR/vc-data-model-2.0/,https://w3c.github.io/vc-data-model/
+W3C,Verifiable Credential Data Integrity,N/A,2025-01-19 Editor's Draft,draft N/A -> 2025-01-19 Editor's Draft,https://www.w3.org/TR/vc-data-integrity/,https://w3c.github.io/vc-data-integrity/
+W3C,Decentralized Identifiers (DIDs),N/A,2026-01-30 Editor's Draft,draft N/A -> 2026-01-30 Editor's Draft,https://www.w3.org/TR/did-core/,https://www.w3.org/TR/did-1.1/
 ISO,ISO/IEC 18013-5:2021,ISO/IEC 18013-5:2021 (ISO Publication: 2021-09),ISO/IEC DIS 18013-5 (DIS ballot initiated: 2020-02-05),stable N/A -> ISO/IEC 18013-5:2021 (ISO Publication: 2021-09); draft N/A -> ISO/IEC DIS 18013-5 (DIS ballot initiated: 2020-02-05),https://www.iso.org/standard/69084.html,https://www.iso.org/standard/69084.html
 ISO,ISO/IEC TS 23220-6:2025,ISO/IEC TS 23220-6:2025 (ISO Publication: 2025-10),N/A,stable N/A -> ISO/IEC TS 23220-6:2025 (ISO Publication: 2025-10),https://www.iso.org/standard/86787.html,N/A
 OIDF,The OAuth 2.0 Authorization Framework (RFC 6749),N/A,N/A,,https://datatracker.ietf.org/doc/rfc6749/,N/A
-OIDF,OpenID for Verifiable Credential Issuance 1.0,1.0,N/A,stable N/A -> 1.0,https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html,N/A
-OIDF,OpenID for Verifiable Presentations,1.0,N/A,stable N/A -> 1.0,https://openid.net/specs/openid-4-verifiable-presentations-1_0.html,N/A
-IETF,Selective Disclosure for JSON Web Tokens,RFC 9901,N/A,stable N/A -> RFC 9901,https://datatracker.ietf.org/doc/rfc9901/,N/A
-IETF,SD-JWT-based Verifiable Credentials (SD-JWT VC),N/A,draft-ietf-oauth-sd-jwt-vc-13 Internet-Draft,draft N/A -> draft-ietf-oauth-sd-jwt-vc-13 Internet-Draft,N/A,https://datatracker.ietf.org/doc/html/draft-ietf-oauth-sd-jwt-vc-13
-EU,EUDI Wallet Architecture and Reference Framework,2.7.3,N/A,stable 2.7.2 -> 2.7.3,https://eu-digital-identity-wallet.github.io/eudi-doc-architecture-and-reference-framework/2.7.3/architecture-and-reference-framework-main/,N/A
-HL,AnonCreds Specification,N/A,v1.0 Draft,draft N/A -> v1.0 Draft,https://anoncreds.github.io/anoncreds-spec/,https://anoncreds.github.io/anoncreds-spec/
+OIDF,OpenID for Verifiable Credential Issuance 1.0,N/A,N/A,,https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html,N/A
+OIDF,OpenID for Verifiable Presentations,N/A,N/A,,https://openid.net/specs/openid-4-verifiable-presentations-1_0.html,N/A
+IETF,Selective Disclosure for JSON Web Tokens,N/A,N/A,,https://datatracker.ietf.org/doc/rfc9901/,N/A
+IETF,SD-JWT-based Verifiable Credentials (SD-JWT VC),N/A,N/A,,N/A,N/A
+EU,EUDI Wallet Architecture and Reference Framework,1.10.0,N/A,stable N/A -> 1.10.0,https://eudi.dev/latest/architecture-and-reference-framework-main/,N/A
+HL,AnonCreds Specification,N/A,N/A,,https://anoncreds.github.io/anoncreds-spec/,N/A
