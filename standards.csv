@@ -9,5 +9,5 @@ OIDF,OpenID for Verifiable Credential Issuance 1.0,1.0,N/A,stable N/A -> 1.0,htt
 OIDF,OpenID for Verifiable Presentations,1.0,N/A,stable N/A -> 1.0,https://openid.net/specs/openid-4-verifiable-presentations-1_0.html,N/A
 IETF,Selective Disclosure for JSON Web Tokens,RFC 9901,N/A,stable N/A -> RFC 9901,https://datatracker.ietf.org/doc/rfc9901/,N/A
 IETF,SD-JWT-based Verifiable Credentials (SD-JWT VC),N/A,draft-ietf-oauth-sd-jwt-vc-13 Internet-Draft,draft N/A -> draft-ietf-oauth-sd-jwt-vc-13 Internet-Draft,N/A,https://datatracker.ietf.org/doc/html/draft-ietf-oauth-sd-jwt-vc-13
-EU,EUDI Wallet Architecture and Reference Framework,2.7.2,N/A,stable 1.10.0 -> 2.7.2,https://eu-digital-identity-wallet.github.io/eudi-doc-architecture-and-reference-framework/2.7.3/architecture-and-reference-framework-main/,N/A
+EU,EUDI Wallet Architecture and Reference Framework,2.7.3,N/A,stable 2.7.2 -> 2.7.3,https://eu-digital-identity-wallet.github.io/eudi-doc-architecture-and-reference-framework/2.7.3/architecture-and-reference-framework-main/,N/A
 HL,AnonCreds Specification,N/A,v1.0 Draft,draft N/A -> v1.0 Draft,https://anoncreds.github.io/anoncreds-spec/,https://anoncreds.github.io/anoncreds-spec/

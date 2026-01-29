@@ -10,6 +10,12 @@
 ### 2026-01-29
 
 #### Version updates
+- [EU] EUDI Wallet Architecture and Reference Framework: Stable Version: 2.7.2 → 2.7.3
+
+
+### 2026-01-29
+
+#### Version updates
 - [W3C] VC Data Model: Stable Version: N/A → v2.0; Draft Version: 2025-01-19 Editor's Draft → v2.1 (2025-10-06 Editor's Draft)
 - [W3C] Verifiable Credential Data Integrity: Stable Version: N/A → v1.0; Draft Version: 2025-01-19 Editor's Draft → v1.1 (2025-08-14 Editor's Draft)
 - [W3C] Decentralized Identifiers (DIDs): Stable Version: N/A → v1.0; Draft Version: 2026-01-30 Editor's Draft → v1.1 (2026-01-24 Editor's Draft)
