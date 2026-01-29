@@ -55,10 +55,12 @@ jobs:
               #    (빈 줄)
               #    #### Version updates (선택적)
               #    - ...
+              # lookahead에서 $ 대신 \Z 사용: MULTILINE에서 $는 줄 끝에도 매칭해
+              # 블록 본문이 빈 문자열로 잡히는 문제 방지
               block_re = re.compile(
                   r"^###\s*(\d{4}-\d{2}-\d{2})\s*$"         # date header
                   r"([\s\S]*?)"                              # everything until next ### or end
-                  r"(?=^###\s*\d{4}-\d{2}-\d{2}\s*$|$)",   # stop at next date block or end
+                  r"(?=^###\s*\d{4}-\d{2}-\d{2}\s*$|\Z)",   # next date block or end-of-string only
                   re.MULTILINE
               )
 
