@@ -52,10 +52,13 @@ jobs:
 
               # 2) 가장 위에 있는 최신 날짜 블록 1개 추출
               #    ### YYYY-MM-DD
+              #    (빈 줄)
+              #    #### Version updates (선택적)
               #    - ...
               block_re = re.compile(
-                  r"^###\s*(\d{4}-\d{2}-\d{2})\s*$\n"       # date header
-                  r"((?:^\-\s+.*$\n?)*)",                   # bullets (0+ lines)
+                  r"^###\s*(\d{4}-\d{2}-\d{2})\s*$"         # date header
+                  r"([\s\S]*?)"                              # everything until next ### or end
+                  r"(?=^###\s*\d{4}-\d{2}-\d{2}\s*$|$)",   # stop at next date block or end
                   re.MULTILINE
               )
 
@@ -67,13 +70,15 @@ jobs:
                   # README 규칙: 최신 항목이 최상단
                   latest = blocks[0]
                   latest_date = latest.group(1)
-                  bullets_raw = latest.group(2) or ""
+                  block_content = latest.group(2) or ""
 
-                  # 3) bullet 라인 정리
+                  # 3) bullet 라인 정리 (서브헤더 무시하고 실제 항목만 추출)
                   bullet_lines = []
-                  for ln in bullets_raw.splitlines():
+                  for ln in block_content.splitlines():
                       ln = ln.strip()
-                      if ln.startswith("- "):
+                      # #### Version updates 같은 서브헤더는 건너뛰고
+                      # 실제 변경 항목만 추출
+                      if ln.startswith("- ") and not ln.startswith("- ####"):
                           bullet_lines.append(ln[2:].strip())
 
                   pretty_items = [f"• {b}" for b in bullet_lines if b]
@@ -117,12 +122,25 @@ jobs:
 
           Path("latest_changelog_pretty.txt").write_text(pretty_text, encoding="utf-8")
           Path("latest_date.txt").write_text(latest_date + "\n", encoding="utf-8")
+          Path("has_changes.txt").write_text("1" if (latest_date != "NO_CHANGE" and pretty_items) else "0", encoding="utf-8")
 
           print("Latest changelog date:", latest_date)
+          print("Has changes:", "1" if (latest_date != "NO_CHANGE" and pretty_items) else "0")
           PY
+
+      - name: Check if there are changes
+        id: check_changes
+        run: |
+          HAS_CHANGES=$(cat has_changes.txt)
+          echo "has_changes=$HAS_CHANGES" >> $GITHUB_OUTPUT
+          if [ "$HAS_CHANGES" = "0" ]; then
+            echo "No changes detected. Skipping email notification."
+            exit 0
+          fi
 
       - name: Read extracted text
         id: readtxt
+        if: steps.check_changes.outputs.has_changes == '1'
         run: |
           echo "LATEST_DATE=$(cat latest_date.txt)" >> $GITHUB_ENV
           echo "CHANGELOG<<EOF" >> $GITHUB_ENV
@@ -130,6 +148,7 @@ jobs:
           echo "EOF" >> $GITHUB_ENV
 
       - name: Send email
+        if: steps.check_changes.outputs.has_changes == '1'
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: ${{ secrets.SMTP_SERVER }}
