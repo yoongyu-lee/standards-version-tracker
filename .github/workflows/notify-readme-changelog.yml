@@ -54,65 +54,45 @@ jobs:
               
               return blocks[0].group(1)
 
-          # 현재 README.md 읽기
-          text = Path("README.md").read_text(encoding="utf-8")
-
-          # (KST) 날짜 표기 보정용
+          # (KST) 날짜 계산
           KST = timezone(timedelta(hours=9))
           today_kst = datetime.now(KST).strftime("%Y-%m-%d")
 
-          # 1) 현재 README.md에서 최신 날짜 추출
-          current_latest_date = extract_latest_date_from_readme(text)
-
-          # 2) 이전 발송 날짜 확인 (Git 커밋 히스토리 활용)
-          previous_sent_date = None
+          # 1) 오늘 이미 메일을 보냈는지 확인
           try:
-              # 마지막 "chore: update standards versions" 커밋 찾기
               result = subprocess.run(
-                  ["git", "log", "--all", "--grep=^chore: update standards versions$", 
+                  ["git", "log", "origin/main", f"--grep=^chore: email sent on {today_kst}$", 
                    "--format=%H", "-n", "1"],
                   capture_output=True,
                   text=True,
                   check=True
               )
-              last_commit = result.stdout.strip()
-              
-              if last_commit:
-                  # 해당 커밋의 README.md 내용 가져오기
-                  result = subprocess.run(
-                      ["git", "show", f"{last_commit}:README.md"],
-                      capture_output=True,
-                      text=True,
-                      check=True
-                  )
-                  previous_readme = result.stdout
-                  previous_sent_date = extract_latest_date_from_readme(previous_readme)
+              already_sent_today = bool(result.stdout.strip())
           except Exception as e:
-              print(f"Warning: Could not get previous sent date: {e}")
+              print(f"Warning: Could not check email sent status: {e}")
+              already_sent_today = False
 
-          print(f"Previous sent date: {previous_sent_date}")
-          print(f"Current latest date: {current_latest_date}")
+          print(f"Today (KST): {today_kst}")
+          print(f"Already sent today: {already_sent_today}")
 
-          # 3) 새로운 변경사항이 있는지 확인
-          is_new_change = False
-          if current_latest_date is None:
-              latest_date = "NO_CHANGE"
-              pretty_items = []
-          elif previous_sent_date is None:
-              # 이전 발송 기록이 없으면 발송
-              is_new_change = True
-              latest_date = current_latest_date
-          elif current_latest_date != previous_sent_date:
-              # 날짜가 다르면 새로운 변경사항
-              is_new_change = True
-              latest_date = current_latest_date
-          else:
-              # 날짜가 같으면 이미 발송함
-              latest_date = current_latest_date
-              is_new_change = False
+          if already_sent_today:
+              print(f"Email already sent today ({today_kst}). Skipping.")
+              Path("has_changes.txt").write_text("0", encoding="utf-8")
+              Path("latest_date.txt").write_text(today_kst + "\n", encoding="utf-8")
+              Path("latest_changelog_pretty.txt").write_text("", encoding="utf-8")
+              exit(0)
 
-          # 4) 새로운 변경사항이 있을 때만 내용 추출
-          if is_new_change and latest_date != "NO_CHANGE":
+          # 2) README.md 읽기 및 최신 날짜 확인
+          text = Path("README.md").read_text(encoding="utf-8")
+          latest_date = extract_latest_date_from_readme(text)
+
+          print(f"README latest date: {latest_date}")
+
+          # 3) 변경사항 확인 및 메일 내용 생성
+          if latest_date and latest_date == today_kst:
+              # 오늘 날짜 블록이 있음 → 변경사항 있음
+              print("Status: Changes detected (today's date block exists)")
+              
               m = re.search(r"^##\s*변경\s*내역\s*$([\s\S]*)", text, re.MULTILINE)
               changelog = m.group(1).strip()
               
@@ -123,8 +103,8 @@ jobs:
                   re.MULTILINE
               )
               blocks = list(block_re.finditer(changelog))
-              latest = blocks[0]
-              block_content = latest.group(2) or ""
+              latest_block = blocks[0]
+              block_content = latest_block.group(2) or ""
 
               bullet_lines = []
               for ln in block_content.splitlines():
@@ -133,34 +113,29 @@ jobs:
                       bullet_lines.append(ln[2:].strip())
 
               pretty_items = [f"• {b}" for b in bullet_lines if b]
+              
+              if not pretty_items:
+                  pretty_items = ["• 변경사항이 없습니다"]
           else:
-              pretty_items = []
+              # 오늘 날짜 블록이 없음 → 변경사항 없음
+              print("Status: No changes (no today's date block)")
+              pretty_items = ["• 변경사항이 없습니다"]
 
-          # 5) 링크 구성
+          # 4) 링크 구성
           server_url = os.environ.get("GITHUB_SERVER_URL", "https://github.com")
           repo = os.environ.get("GITHUB_REPOSITORY", "")
           repo_url = f"{server_url}/{repo}" if repo else server_url
           readme_url = f"{server_url}/{repo}/blob/main/README.md" if repo else ""
           csv_url = f"{server_url}/{repo}/blob/main/standards.csv" if repo else ""
 
-          # 6) 최종 텍스트 본문 생성 (Markdown 없이)
+          # 5) 최종 텍스트 본문 생성
           out = []
           out.append("표준 문서 변경 알림")
           out.append("")
-
-          if latest_date == "NO_CHANGE":
-              out.append(f"날짜: {today_kst} (변경내역 없음)")
-          else:
-              out.append(f"날짜: {latest_date}")
-
+          out.append(f"날짜: {today_kst}")
           out.append("")
           out.append("변경 내역:")
-
-          if pretty_items:
-              out.extend(pretty_items)
-          else:
-              out.append("• 변경내역 없음")
-
+          out.extend(pretty_items)
           out.append("")
           out.append("바로가기:")
           if repo_url:
@@ -173,15 +148,12 @@ jobs:
           pretty_text = "\n".join(out) + "\n"
 
           Path("latest_changelog_pretty.txt").write_text(pretty_text, encoding="utf-8")
-          Path("latest_date.txt").write_text(latest_date + "\n", encoding="utf-8")
+          Path("latest_date.txt").write_text(today_kst + "\n", encoding="utf-8")
           
-          # ✅ 새로운 변경사항이 있고, 내용이 있을 때만 has_changes=1
-          has_changes = "1" if (is_new_change and latest_date != "NO_CHANGE" and pretty_items) else "0"
-          Path("has_changes.txt").write_text(has_changes, encoding="utf-8")
+          # ✅ 오늘 처음 실행이면 항상 메일 발송
+          Path("has_changes.txt").write_text("1", encoding="utf-8")
 
-          print("Latest changelog date:", latest_date)
-          print("Is new change:", is_new_change)
-          print("Has changes:", has_changes)
+          print("Has changes: 1 (will send email)")
           PY
 
       - name: Check if there are changes
@@ -216,3 +188,12 @@ jobs:
           from: "standards-version-tracker <${{ secrets.SMTP_USERNAME }}>"
           body: |
             ${{ env.CHANGELOG }}
+
+      - name: Record email sent
+        if: steps.check_changes.outputs.has_changes == '1'
+        run: |
+          TODAY=$(cat latest_date.txt | tr -d '\n')
+          git config user.name "standards-bot"
+          git config user.email "standards-bot@users.noreply.github.com"
+          git commit --allow-empty -m "chore: email sent on $TODAY"
+          git push
