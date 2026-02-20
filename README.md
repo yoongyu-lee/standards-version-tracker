@@ -7,6 +7,12 @@
 
 ## 변경 내역
 
+### 2026-02-20
+
+#### Version updates
+- [W3C] VC Data Model: Draft Version: v2.1 (2025-10-06 Editor's Draft) → v2.1 (2026-02-19 Editor's Draft)
+
+
 ### 2026-02-08
 
 #### Version updates
