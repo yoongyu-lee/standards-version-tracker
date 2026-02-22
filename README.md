@@ -7,6 +7,12 @@
 
 ## 변경 내역
 
+### 2026-02-22
+
+#### Version updates
+- [W3C] Decentralized Identifiers (DIDs): Draft Version: v1.1 (2026-02-08 Editor's Draft) → v1.1 (2026-02-21 Editor's Draft)
+
+
 ### 2026-02-20
 
 #### Version updates

@@ -1,7 +1,7 @@
 단체,표준명 (항목),Stable Version,Draft Version,핵심 변경 내용,Stable Version Link,Draft Version Link
 W3C,VC Data Model,v2.0,v2.1 (2026-02-19 Editor's Draft),draft v2.1 (2025-10-06 Editor's Draft) -> v2.1 (2026-02-19 Editor's Draft),https://www.w3.org/TR/vc-data-model-2.0/,https://w3c.github.io/vc-data-model/
 W3C,Verifiable Credential Data Integrity,v1.0,v1.1 (2025-08-14 Editor's Draft),stable N/A -> v1.0; draft 2025-01-19 Editor's Draft -> v1.1 (2025-08-14 Editor's Draft),https://www.w3.org/TR/vc-data-integrity/,https://w3c.github.io/vc-data-integrity/
-W3C,Decentralized Identifiers (DIDs),v1.0,v1.1 (2026-02-08 Editor's Draft),draft v1.1 (2026-01-24 Editor's Draft) -> v1.1 (2026-02-08 Editor's Draft),https://www.w3.org/TR/did-core/,https://www.w3.org/TR/did-1.1/
+W3C,Decentralized Identifiers (DIDs),v1.0,v1.1 (2026-02-21 Editor's Draft),draft v1.1 (2026-02-08 Editor's Draft) -> v1.1 (2026-02-21 Editor's Draft),https://www.w3.org/TR/did-core/,https://www.w3.org/TR/did-1.1/
 ISO,ISO/IEC 18013-5:2021,ISO/IEC 18013-5:2021 (ISO Publication: 2021-09),ISO/IEC DIS 18013-5 (DIS ballot initiated: 2020-02-05),stable N/A -> ISO/IEC 18013-5:2021 (ISO Publication: 2021-09); draft N/A -> ISO/IEC DIS 18013-5 (DIS ballot initiated: 2020-02-05),https://www.iso.org/standard/69084.html,https://www.iso.org/standard/69084.html
 ISO,ISO/IEC TS 23220-6:2025,ISO/IEC TS 23220-6:2025 (ISO Publication: 2025-10),N/A,stable N/A -> ISO/IEC TS 23220-6:2025 (ISO Publication: 2025-10),https://www.iso.org/standard/86787.html,N/A
 OIDF,The OAuth 2.0 Authorization Framework (RFC 6749),N/A,N/A,,https://datatracker.ietf.org/doc/rfc6749/,N/A
