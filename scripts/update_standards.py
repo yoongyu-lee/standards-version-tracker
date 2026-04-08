@@ -43,7 +43,7 @@ import traceback
 import logging
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 from urllib.parse import urljoin, urlparse, urlunparse, quote
 from zoneinfo import ZoneInfo
 from email.utils import parsedate_to_datetime
@@ -424,6 +424,14 @@ def specificity_score(s: str) -> int:
     return score
 
 
+def extract_iso_date(s: str) -> Optional[str]:
+    s = norm_na(s)
+    if is_na(s):
+        return None
+    m = re.search(r"\b(\d{4}-\d{2}-\d{2})\b", s)
+    return m.group(1) if m else None
+
+
 def choose_value_no_degrade(current: str, candidate: str) -> str:
     cur = norm_na(current)
     cand = norm_na(candidate)
@@ -431,6 +439,13 @@ def choose_value_no_degrade(current: str, candidate: str) -> str:
         return cur
     if is_na(cur):
         return cand
+
+    cur_date = extract_iso_date(cur)
+    cand_date = extract_iso_date(cand)
+    # If both values carry comparable ISO dates, prefer the newer one first.
+    if cur_date and cand_date and cur_date != cand_date:
+        return cand if cand_date > cur_date else cur
+
     return cand if specificity_score(cand) >= specificity_score(cur) else cur
 
 
@@ -440,6 +455,23 @@ def choose_link_seed_protected(current: str, candidate: str) -> str:
     if is_na(cand):
         return cur
     return cand
+
+
+def add_content_change_note(notes: List[str], seen: Set[str], label: str, url: str, status: str, diff_rel: Optional[str]) -> None:
+    if status != "changed":
+        return
+
+    key = f"{label}|{diff_rel or url}"
+    if key in seen:
+        return
+    seen.add(key)
+
+    msg = f"{label}: content changed"
+    if diff_rel:
+        msg += f" ({diff_rel})"
+    else:
+        msg += f" ({url})"
+    notes.append(msg)
 
 
 def compute_core_change(before_row: Dict[str, str], after_row: Dict[str, str]) -> Optional[str]:
@@ -1478,6 +1510,8 @@ def main() -> int:
     for idx, row in enumerate(rows, start=1):
         org = row.get("단체", "").strip()
         name = row.get("표준명 (항목)", "").strip()
+        row_content_notes: List[str] = []
+        row_content_seen: Set[str] = set()
 
         before_raw = {k: (row.get(k, "") if row.get(k, "") is not None else "") for k in fieldnames}
 
@@ -1485,11 +1519,12 @@ def main() -> int:
         draft_link = row.get("Draft Version Link", "")
 
         # (A) 현재 CSV 값 기준 snapshot/diff
-        for link in [stable_link, draft_link]:
+        for label, link in [("Stable", stable_link), ("Draft", draft_link)]:
             u = norm_na(norm_url(link))
             if not is_na(u):
                 try:
-                    check_and_record_content_change(u)
+                    status, diff_rel = check_and_record_content_change(u)
+                    add_content_change_note(row_content_notes, row_content_seen, label, u, status, diff_rel)
                 except Exception:
                     logger.warning("[WARN] content snapshot failed url=%s\n%s", u, traceback.format_exc())
 
@@ -1500,7 +1535,10 @@ def main() -> int:
         try:
             discovered_stable = norm_na(norm_url(upd_raw.stable_link or ""))
             if not is_na(discovered_stable):
-                check_and_record_content_change(discovered_stable)
+                status, diff_rel = check_and_record_content_change(discovered_stable)
+                add_content_change_note(
+                    row_content_notes, row_content_seen, "Discovered stable", discovered_stable, status, diff_rel
+                )
         except Exception:
             logger.warning("[WARN] discovered stable snapshot failed url=%s\n%s",
                            (upd_raw.stable_link or ""), traceback.format_exc())
@@ -1508,7 +1546,10 @@ def main() -> int:
         try:
             discovered_draft = norm_na(norm_url(upd_raw.draft_link or ""))
             if not is_na(discovered_draft):
-                check_and_record_content_change(discovered_draft)
+                status, diff_rel = check_and_record_content_change(discovered_draft)
+                add_content_change_note(
+                    row_content_notes, row_content_seen, "Discovered draft", discovered_draft, status, diff_rel
+                )
         except Exception:
             logger.warning("[WARN] discovered draft snapshot failed url=%s\n%s",
                            (upd_raw.draft_link or ""), traceback.format_exc())
@@ -1537,6 +1578,10 @@ def main() -> int:
             changed_any = True
             csv_changed_any = True
             diffs_for_readme.append((org, name, diffs))
+
+        if row_content_notes:
+            changed_any = True
+            content_changes_for_readme.append((org, name, row_content_notes))
 
     if changed_any:
         if csv_changed_any:

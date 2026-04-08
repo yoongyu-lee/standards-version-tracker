@@ -17,7 +17,7 @@ jobs:
 
     steps:
       - name: Checkout (latest main)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: main
           fetch-depth: 0
@@ -54,6 +54,41 @@ jobs:
               
               return blocks[0].group(1)
 
+          def extract_latest_block(text):
+              m = re.search(r"^##\s*변경\s*내역\s*$([\s\S]*)", text, re.MULTILINE)
+              if not m:
+                  return None, None
+
+              changelog = m.group(1).strip()
+              block_re = re.compile(
+                  r"^###\s*(\d{4}-\d{2}-\d{2})\s*$"
+                  r"([\s\S]*?)"
+                  r"(?=^###\s*\d{4}-\d{2}-\d{2}\s*$|\Z)",
+                  re.MULTILINE
+              )
+              blocks = list(block_re.finditer(changelog))
+              if not blocks:
+                  return None, None
+
+              return blocks[0].group(1), (blocks[0].group(2) or "")
+
+          def extract_version_update_items(block_content):
+              m = re.search(
+                  r"^####\s*Version updates\s*$([\s\S]*?)(?=^####\s+|^<details>|\Z)",
+                  block_content,
+                  re.MULTILINE
+              )
+              if not m:
+                  return []
+
+              section = m.group(1)
+              items = []
+              for ln in section.splitlines():
+                  ln = ln.strip()
+                  if ln.startswith("- "):
+                      items.append(ln[2:].strip())
+              return [x for x in items if x]
+
           # (KST) 날짜 계산
           KST = timezone(timedelta(hours=9))
           today_kst = datetime.now(KST).strftime("%Y-%m-%d")
@@ -85,41 +120,24 @@ jobs:
           # 2) README.md 읽기 및 최신 날짜 확인
           text = Path("README.md").read_text(encoding="utf-8")
           latest_date = extract_latest_date_from_readme(text)
+          block_date, block_content = extract_latest_block(text)
 
           print(f"README latest date: {latest_date}")
 
-          # 3) 변경사항 확인 및 메일 내용 생성
-          if latest_date and latest_date == today_kst:
-              # 오늘 날짜 블록이 있음 → 변경사항 있음
-              print("Status: Changes detected (today's date block exists)")
-              
-              m = re.search(r"^##\s*변경\s*내역\s*$([\s\S]*)", text, re.MULTILINE)
-              changelog = m.group(1).strip()
-              
-              block_re = re.compile(
-                  r"^###\s*(\d{4}-\d{2}-\d{2})\s*$"
-                  r"([\s\S]*?)"
-                  r"(?=^###\s*\d{4}-\d{2}-\d{2}\s*$|\Z)",
-                  re.MULTILINE
-              )
-              blocks = list(block_re.finditer(changelog))
-              latest_block = blocks[0]
-              block_content = latest_block.group(2) or ""
-
-              bullet_lines = []
-              for ln in block_content.splitlines():
-                  ln = ln.strip()
-                  if ln.startswith("- ") and not ln.startswith("- ####"):
-                      bullet_lines.append(ln[2:].strip())
-
-              pretty_items = [f"• {b}" for b in bullet_lines if b]
-              
-              if not pretty_items:
-                  pretty_items = ["• 변경사항이 없습니다"]
+          # 3) 버전 변경사항 확인 및 메일 내용 생성
+          if latest_date and latest_date == today_kst and block_date == today_kst:
+              version_items = extract_version_update_items(block_content)
           else:
-              # 오늘 날짜 블록이 없음 → 변경사항 없음
-              print("Status: No changes (no today's date block)")
-              pretty_items = ["• 변경사항이 없습니다"]
+              version_items = []
+
+          if version_items:
+              print("Status: Version updates detected")
+              pretty_items = [f"• {b}" for b in version_items]
+              has_changes = "1"
+          else:
+              print("Status: No version updates detected")
+              pretty_items = []
+              has_changes = "0"
 
           # 4) 링크 구성
           server_url = os.environ.get("GITHUB_SERVER_URL", "https://github.com")
@@ -149,11 +167,9 @@ jobs:
 
           Path("latest_changelog_pretty.txt").write_text(pretty_text, encoding="utf-8")
           Path("latest_date.txt").write_text(today_kst + "\n", encoding="utf-8")
-          
-          # ✅ 오늘 처음 실행이면 항상 메일 발송
-          Path("has_changes.txt").write_text("1", encoding="utf-8")
+          Path("has_changes.txt").write_text(has_changes, encoding="utf-8")
 
-          print("Has changes: 1 (will send email)")
+          print(f"Has changes: {has_changes}")
           PY
 
       - name: Check if there are changes
@@ -177,7 +193,7 @@ jobs:
 
       - name: Send email
         if: steps.check_changes.outputs.has_changes == '1'
-        uses: dawidd6/action-send-mail@v3
+        uses: dawidd6/action-send-mail@v6
         with:
           server_address: ${{ secrets.SMTP_SERVER }}
           server_port: ${{ secrets.SMTP_PORT }}
