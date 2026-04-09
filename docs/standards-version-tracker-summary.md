@@ -139,14 +139,18 @@ standards/
 
 ```csv
 단체,표준명 (항목),Stable Version,Draft Version,핵심 변경 내용,Stable Version Link,Draft Version Link
-W3C,VC Data Model,N/A,N/A,,https://www.w3.org/TR/vc-data-model-2.0/,N/A
-IETF,SD-JWT-based Verifiable Credentials (SD-JWT VC),N/A,N/A,,N/A,N/A
-HL,AnonCreds Specification,N/A,N/A,,https://anoncreds.github.io/anoncreds-spec/,N/A
+W3C,VC Data Model,N/A,N/A,,https://www.w3.org/TR/vc-data-model-2.0/,https://w3c.github.io/vc-data-model/
+IETF,SD-JWT-based Verifiable Credentials (SD-JWT VC),N/A,N/A,,N/A,https://datatracker.ietf.org/doc/html/draft-ietf-oauth-sd-jwt-vc-15
+HL,AnonCreds Specification,N/A,N/A,,N/A,https://anoncreds.github.io/anoncreds-spec/
 ```
 
-위처럼 `단체`, `표준명`, `Stable Version Link` 정도만 입력해도 첫 실행 시 자동으로 값이 채워질 수 있습니다.
+위처럼 링크만 먼저 넣어두면, 첫 실행 때 버전 값이 자동으로 채워질 수 있습니다.
 
-참고: IETF는 일부 항목에서 Stable 링크가 없어도 Draft를 찾을 수 있습니다. 예를 들어 표준명에 `SD-JWT`와 `Verifiable`이 함께 포함되면, 결정된 규칙에 따라 Draft를 직접 찾습니다.
+참고:
+
+- IETF는 Stable 링크가 없어도 Draft 링크만 있으면 버전 값을 채울 수 있습니다.
+- HL(AnonCreds)도 Draft 링크만 있으면 버전 값을 채울 수 있습니다.
+- W3C는 Stable 링크와 Draft 링크를 함께 두는 것이 가장 안정적입니다.
 
 ---
 
@@ -247,17 +251,18 @@ Stable Version은 아래 4단계로 갱신됩니다.
 ## 6. 스냅샷 및 변경 감지 메커니즘
 
 > 용어 정리
-> - **스냅샷 파일**: 특정 URL의 본문 텍스트를 저장한 기준 파일
+> - **스냅샷 파일**: 특정 URL의 본문 텍스트나 메타데이터를 저장한 기준 파일
 > - **diff 파일**: 이전 스냅샷 파일과 현재 스냅샷 파일의 차이만 기록한 파일
 > - **기준 스냅샷(baseline)**: 해당 URL에 대해 처음 저장되는 스냅샷 파일
 
 동작 방식은 다음과 같습니다.
 
 1. 링크의 HTML을 가져옵니다.
-2. 본문 텍스트를 정리해 스냅샷 파일로 저장합니다.
+2. 본문 텍스트와 메타데이터를 정리해 스냅샷 파일로 저장합니다.
 3. 이전 스냅샷 파일과 비교합니다.
 4. 차이가 있으면 `logs/diffs/*.diff` 형식의 diff 파일을 생성합니다.
-5. 실행 중 새로 발견된 링크도 같은 실행에서 스냅샷 파일에 포함합니다.
+5. 첫 실행이면 baseline을 만들고, README에도 그 사실을 기록합니다.
+6. 실행 중 새로 발견된 링크도 같은 실행에서 스냅샷 파일에 포함합니다.
 
 > 스냅샷 파일은 `logs/snapshots/`에 저장되며,
 > diff 파일은 `logs/diffs/`에 생성됩니다.
@@ -276,7 +281,10 @@ Stable Version은 아래 4단계로 갱신됩니다.
   - 여기서 TR은 `Technical Report`의 약자이며, W3C가 표준 문서를 게시하는 공식 문서 페이지를 의미합니다.
   - 예: `https://www.w3.org/TR/vc-data-model-2.0/`
 - Draft: Stable 페이지에서 `Editor's Draft` 링크를 찾아 사용합니다.
-- Draft 식별자는 제목, 메타데이터, 본문 날짜, HTTP 헤더 등을 바탕으로 찾습니다.
+- Draft 식별자는 제목, 메타데이터, 본문 날짜를 바탕으로 찾습니다.
+- W3C 초안 문서는 브라우저에서 자바스크립트로 날짜가 보이는 경우가 있습니다.
+- 이런 경우 원본 HTML 안의 ReSpec 설정을 읽어 날짜를 찾습니다.
+- 그래도 날짜가 없으면, Editor's Draft 페이지의 `Last-Modified`를 보조 신호로 사용합니다.
 
 ### 7.2 ISO
 
@@ -290,6 +298,7 @@ Stable Version은 아래 4단계로 갱신됩니다.
 
 - Stable: RFC URL에서 `RFC ####` 형식으로 읽습니다.
 - Draft: 결정형 규칙, 표준명 기반 식별, Datatracker 검색 순으로 탐색합니다.
+- Draft 링크가 이미 있으면, 그 링크의 `draft-...-NN` 값을 그대로 Draft Version으로 사용합니다.
 - 애매한 경우에는 Draft를 채우지 않습니다.
 
 ### 7.4 OIDF
@@ -304,8 +313,9 @@ Stable Version은 아래 4단계로 갱신됩니다.
 
 ### 7.6 HL (AnonCreds)
 
-- Stable: 링크 정규화만 수행합니다.
-- Draft: 문서 상태 텍스트, 버전 표기, GitHub 커밋 날짜 등을 활용합니다.
+- Stable: 기본적으로 `N/A`를 유지합니다.
+- Draft: Draft 링크에 있는 단일 spec 페이지를 기준으로 버전을 찾습니다.
+- 버전 표기나 문서 상태 텍스트가 있으면 우선 사용하고, 없으면 GitHub 최신 커밋 날짜를 참고합니다.
 
 ### 7.7 기타 단체
 
@@ -345,8 +355,8 @@ Stable Version은 아래 4단계로 갱신됩니다.
 | 구분 | 형식 | 조건 |
 |------|------|------|
 | **Version updates** | `- [단체] 표준명: 컬럼명: 이전값 → 새값` | 버전/링크 값이 변경된 경우 |
-| **Metadata changes** | `- [단체] 표준명: Draft metadata changed (...)` | 버전 문자열로 승격하지 않는 서버 헤더/보조 메타 정보가 바뀐 경우 |
-| **Content diffs** | `<details>` 태그 내 접기 형태 | 문서 본문 변경 시 |
+| **Metadata changes** | `- [단체] 표준명: Draft metadata changed (...)` | 메타데이터가 바뀌었거나 baseline이 처음 만들어진 경우 |
+| **Content diffs** | `<details>` 태그 내 접기 형태 | 문서 본문이 바뀌었거나 baseline이 처음 만들어진 경우 |
 
 변경 내용은 `README.md`의 `## 변경 내역` 바로 아래에 **최신이 위로** 누적됩니다.
 
@@ -354,7 +364,7 @@ Stable Version은 아래 4단계로 갱신됩니다.
 
 ### README 예상 출력 예시
 
-아래 예시는 `Version updates`, `Metadata changes`, `Content diffs`를 분리해서 기록하도록 확장했을 때의 예상 형태입니다.
+아래 예시는 `Version updates`, `Metadata changes`, `Content diffs`를 나눠서 기록하는 방식의 예시입니다.
 
 #### 예시 1: 문서 헤더에 명시된 날짜가 바뀌어 Draft Version이 갱신되는 경우
 
