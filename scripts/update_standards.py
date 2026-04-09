@@ -41,6 +41,7 @@ import re
 import sys
 import traceback
 import logging
+from email.utils import parsedate_to_datetime
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Dict, List, Optional, Set, Tuple
@@ -497,6 +498,16 @@ def extract_iso_date(s: str) -> Optional[str]:
     return m.group(1) if m else None
 
 
+def extract_http_date_iso(s: str) -> Optional[str]:
+    if not s:
+        return None
+    try:
+        dt = parsedate_to_datetime(s)
+    except Exception:
+        return None
+    return dt.date().isoformat()
+
+
 def choose_value_no_degrade(current: str, candidate: str) -> str:
     cur = norm_na(current)
     cand = norm_na(candidate)
@@ -523,15 +534,18 @@ def choose_link_seed_protected(current: str, candidate: str) -> str:
 
 
 def add_content_change_note(notes: List[str], seen: Set[str], label: str, url: str, status: str, diff_rel: Optional[str]) -> None:
-    if status != "changed":
+    if status not in {"changed", "baseline"}:
         return
 
-    key = f"{label}|{diff_rel or url}"
+    key = f"{label}|content|{status}|{diff_rel or url}"
     if key in seen:
         return
     seen.add(key)
 
-    msg = f"{label}: content changed"
+    if status == "baseline":
+        msg = f"{label}: content baseline created"
+    else:
+        msg = f"{label}: content changed"
     if diff_rel:
         msg += f" ({diff_rel})"
     else:
@@ -540,15 +554,18 @@ def add_content_change_note(notes: List[str], seen: Set[str], label: str, url: s
 
 
 def add_metadata_change_note(notes: List[str], seen: Set[str], label: str, url: str, status: str, diff_rel: Optional[str]) -> None:
-    if status != "changed":
+    if status not in {"changed", "baseline"}:
         return
 
-    key = f"{label}|metadata|{diff_rel or url}"
+    key = f"{label}|metadata|{status}|{diff_rel or url}"
     if key in seen:
         return
     seen.add(key)
 
-    msg = f"{label} metadata changed"
+    if status == "baseline":
+        msg = f"{label} metadata baseline created"
+    else:
+        msg = f"{label} metadata changed"
     if diff_rel:
         msg += f" ({diff_rel})"
     else:
@@ -790,10 +807,15 @@ def parse_w3c_draft_version(draft_url: str) -> Optional[str]:
             or extract_first(r"\b([0-9]{1,2}\.[0-9]{1,2}(?:\.[0-9]{1,2})?)\b", title)
         )
 
+    logger.debug("[W3C] draft parse start url=%s title=%r h1=%r ver=%r",
+                 draft_url, title[:200], h1txt[:200], ver)
+
     # 2) 날짜 탐지 우선순위:
     #   - meta[name|property in {dcterms.modified,dcterms.issued,dc.date,dc.modified,last-modified}]
     #   - <time datetime="YYYY-MM-DD"> 또는 내용 텍스트 내 YYYY-MM-DD
     #   - 본문 라인 중 "This version|Last updated|Updated|Modified" 근처의 YYYY-MM-DD
+    #   - ReSpec 설정의 publishDate
+    #   - ReSpec ED 원본 페이지인 경우 Last-Modified를 렌더 날짜로 해석
     dt: Optional[str] = None
     meta_keys = {"dcterms.modified", "dcterms.issued", "dc.date", "dc.modified", "last-modified"}
     for m in soup.find_all("meta"):
@@ -808,17 +830,21 @@ def parse_w3c_draft_version(draft_url: str) -> Optional[str]:
                 break
 
     if not dt:
+        time_candidates: List[str] = []
         for t in soup.find_all("time"):
             datetime_attr = (t.get("datetime") or "").strip()
+            txt = t.get_text(" ", strip=True)
+            time_candidates.append(f"datetime={datetime_attr!r} text={txt[:120]!r}")
             d = extract_first(r"\b(\d{4}-\d{2}-\d{2})\b", datetime_attr)
             if d:
                 dt = d
                 break
-            txt = t.get_text(" ", strip=True)
             d = extract_first(r"\b(\d{4}-\d{2}-\d{2})\b", txt)
             if d:
                 dt = d
                 break
+        logger.debug("[W3C] draft parse time candidates url=%s candidates=%s dt_after_time=%r",
+                     draft_url, time_candidates[:10], dt)
 
     if not dt:
         body_text = soup.get_text("\n", strip=True)
@@ -831,6 +857,31 @@ def parse_w3c_draft_version(draft_url: str) -> Optional[str]:
                 if d:
                     dt = d
                     break
+
+    if not dt:
+        respec_publish_date = extract_first(
+            r'(?m)^[^/\n]*publishDate\s*:\s*"((?:19|20)\d{2}-\d{1,2}-\d{1,2})"',
+            html,
+        )
+        if respec_publish_date:
+            parts = respec_publish_date.split("-")
+            dt = f"{parts[0]}-{int(parts[1]):02d}-{int(parts[2]):02d}"
+
+    if not dt:
+        respec_spec_status = extract_first(r'(?m)^[^/\n]*specStatus\s*:\s*"([^"]+)"', html)
+        is_respec_source = "respecConfig" in html and "respec-w3c" in html
+        is_editors_draft = (respec_spec_status or "").strip().upper() == "ED"
+        header_last_modified = extract_http_date_iso(headers.get("Last-Modified", ""))
+        if is_respec_source and is_editors_draft and header_last_modified:
+            dt = header_last_modified
+            logger.debug(
+                "[W3C] draft parse using ReSpec Last-Modified fallback url=%s last_modified=%r",
+                draft_url,
+                headers.get("Last-Modified", ""),
+            )
+
+    logger.debug("[W3C] draft parse result url=%s ver=%r dt=%r",
+                 draft_url, ver, dt)
 
     # 3) 출력 조합(식별자 필수는 상위 validate 단계에서 확인)
     if ver and dt:
@@ -891,6 +942,17 @@ def parse_ietf_stable_from_rfc_url(url: str) -> Optional[str]:
     if m2:
         return f"RFC {m2.group(1)}"
     return None
+
+
+def parse_ietf_draft_from_url(url: str) -> Optional[str]:
+    """
+    datatracker draft URL에 포함된 draft id에서 Draft Version을 복원한다.
+    """
+    u = (url or "").strip()
+    m = re.search(r"/doc(?:/html)?/(draft-[a-z0-9-]+-\d{1,2})(?:/|$)", u, re.IGNORECASE)
+    if not m:
+        return None
+    return f"{m.group(1).lower()} Internet-Draft"
 
 
 def _ietf_extract_draft_id_from_text(text: str) -> Optional[str]:
@@ -1244,25 +1306,22 @@ def compute_update_for_row(org: str, spec_name: str, stable_link: str, draft_lin
     upd = RowUpdate()
 
     # ---- HL(AnonCreds): Stable은 없고 Draft만 존재하는 케이스 처리 ----
-    if org == "HL" and not is_na(stable_link_n):
+    if org == "HL" and (not is_na(stable_link_n) or not is_na(draft_link_n)):
         try:
-            # stable 링크는 final_url로 정규화
-            _, final_stable = normalize_final_url(stable_link_n)
-            final_stable = final_stable or stable_link_n
+            source_link = draft_link_n if not is_na(draft_link_n) else stable_link_n
+            _, final_draft = normalize_final_url(source_link)
+            final_draft = final_draft or source_link
 
             # AnonCreds spec 페이지면, 해당 페이지를 Draft로 간주하고 식별자 확보 시에만 반영
             if re.search(r"\banoncreds\b", spec_name, re.IGNORECASE) or re.search(
                 r"(anoncreds\.github\.io/anoncreds-spec|hyperledger\.github\.io/anoncreds-spec)",
-                final_stable,
+                final_draft,
                 re.IGNORECASE,
             ):
-                dv = parse_hl_anoncreds_draft(final_stable)
+                dv = parse_hl_anoncreds_draft(final_draft)
                 if dv and has_identifier(dv):
                     upd.draft_version = dv
-                    upd.draft_link = final_stable
-
-            # stable link는 기존 정책대로 "정규화만" (stable version은 채우지 않음)
-            upd.stable_link = final_stable
+                    upd.draft_link = final_draft
 
         except Exception:
             logger.warning("[ROW] HL(AnonCreds) parse failed org=%s name=%s\n%s",
@@ -1356,6 +1415,14 @@ def compute_update_for_row(org: str, spec_name: str, stable_link: str, draft_lin
                         if dv and dl:
                             upd.draft_version = dv
                             upd.draft_link = dl
+            else:
+                _, final_draft = normalize_final_url(draft_link_n)
+                final_draft = final_draft or draft_link_n
+                dv = parse_ietf_draft_from_url(final_draft)
+                if final_draft:
+                    upd.draft_link = final_draft
+                if dv:
+                    upd.draft_version = dv
 
         except Exception:
             logger.warning("[ROW] IETF discovery failed org=%s name=%s\n%s",
