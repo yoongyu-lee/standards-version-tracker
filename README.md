@@ -7,6 +7,12 @@
 
 ## 변경 내역
 
+### 2026-04-09
+
+#### Version updates
+- [W3C] Verifiable Credential Data Integrity: Draft Version: v1.1 (2025-08-14 Editor's Draft) → v1.1 (2026-04-09 Editor's Draft)
+
+
 ### 2026-04-03
 
 #### Version updates
