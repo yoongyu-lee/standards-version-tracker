@@ -46,8 +46,6 @@ from datetime import datetime
 from typing import Dict, List, Optional, Set, Tuple
 from urllib.parse import urljoin, urlparse, urlunparse, quote
 from zoneinfo import ZoneInfo
-from email.utils import parsedate_to_datetime
-
 import requests
 from bs4 import BeautifulSoup
 
@@ -89,6 +87,15 @@ LOG_STDOUT_ONLY = os.environ.get("SVT_LOG_STDOUT_ONLY", "0").strip() in {"1", "t
 ENV_LOG_FILE = os.environ.get("SVT_LOG_FILE", "").strip()
 
 logger = logging.getLogger("svt")
+
+METADATA_HTTP_HEADERS = ("Last-Modified", "ETag")
+METADATA_META_KEYS = {
+    "dcterms.modified",
+    "dcterms.issued",
+    "dc.date",
+    "dc.modified",
+    "last-modified",
+}
 
 
 def _now_kst_ts() -> str:
@@ -291,10 +298,7 @@ def http_get(
 # Diff snapshot logic
 # -------------------------
 
-def fetch_page_lines_for_diff(url: str) -> List[str]:
-    html = http_get(url)
-    soup = soup_from_html(html)
-
+def extract_body_lines(soup: BeautifulSoup) -> List[str]:
     body = soup.body
     if body is None:
         text = soup.get_text(separator="\n", strip=True)
@@ -308,7 +312,6 @@ def fetch_page_lines_for_diff(url: str) -> List[str]:
             continue
         lines.append(s)
 
-    logger.debug("[DIFF] fetched lines url=%s lines=%d", url, len(lines))
     return lines
 
 
@@ -345,12 +348,13 @@ def safe_write_text(path: str, content: str) -> None:
     logger.debug("[FS] file saved path=%s bytes=%d", path, len(content.encode("utf-8", "ignore")))
 
 
-def _write_diff_file(url: str, prev: List[str], cur: List[str]) -> Optional[str]:
+def _write_diff_file(url: str, prev: List[str], cur: List[str], kind: str = "content") -> Optional[str]:
     diff_text = make_unified_diff(prev, cur)
 
     ts = datetime.now(KST).strftime("%Y%m%d-%H%M%S")
     safe = url_to_safe_filename(url)
-    diff_filename = f"{safe}__{ts}.diff"
+    suffix = "metadata" if kind == "metadata" else "content"
+    diff_filename = f"{safe}__{suffix}__{ts}.diff"
     diff_path = os.path.join(DIFF_DIR, diff_filename)
 
     if diff_text:
@@ -363,32 +367,93 @@ def _write_diff_file(url: str, prev: List[str], cur: List[str]) -> Optional[str]
     return None
 
 
-def check_and_record_content_change(url: str) -> Tuple[str, Optional[str]]:
-    ensure_dirs()
+def extract_metadata_lines(soup: BeautifulSoup, headers, final_url: str) -> List[str]:
+    lines: List[str] = [f"url: {norm_url(final_url)}"]
 
-    safe = url_to_safe_filename(url)
-    snapshot_path = os.path.join(SNAPSHOT_DIR, f"{safe}.txt")
+    title = (soup.title.get_text(" ", strip=True) if soup.title else "").strip()
+    if title:
+        lines.append(f"title: {title}")
 
+    canonical = soup.find("link", attrs={"rel": re.compile(r"\bcanonical\b", re.IGNORECASE)})
+    if canonical and canonical.get("href"):
+        lines.append(f"canonical: {norm_url(urljoin(final_url, canonical.get('href', '').strip()))}")
+
+    for t in soup.find_all("time"):
+        datetime_attr = (t.get("datetime") or "").strip()
+        txt = t.get_text(" ", strip=True)
+        parts = [x for x in [datetime_attr, txt] if x]
+        if parts:
+            lines.append(f"time: {' | '.join(parts)}")
+
+    for m in soup.find_all("meta"):
+        name = (m.get("name") or "").strip().lower()
+        prop = (m.get("property") or "").strip().lower()
+        key = name or prop
+        if key not in METADATA_META_KEYS:
+            continue
+        content = (m.get("content") or "").strip()
+        if content:
+            lines.append(f"meta[{key}]: {content}")
+
+    for header in METADATA_HTTP_HEADERS:
+        value = (headers.get(header) or "").strip()
+        if value:
+            lines.append(f"http[{header}]: {value}")
+
+    return lines
+
+
+def fetch_page_snapshots(url: str) -> Tuple[List[str], List[str]]:
+    html, headers, final_url = http_get(url, return_headers=True, return_final_url=True)
+    soup = soup_from_html(html)
+    body_lines = extract_body_lines(soup)
+    metadata_lines = extract_metadata_lines(soup, headers, final_url)
+    logger.debug("[DIFF] fetched snapshots url=%s body_lines=%d metadata_lines=%d",
+                 url, len(body_lines), len(metadata_lines))
+    return body_lines, metadata_lines
+
+
+def _compare_and_record_snapshot(
+    url: str,
+    snapshot_path: str,
+    cur: List[str],
+    kind: str,
+) -> Tuple[str, Optional[str]]:
     prev = load_snapshot_lines(snapshot_path)
-    cur = fetch_page_lines_for_diff(url)
 
     if prev == cur:
-        logger.debug("[DIFF] unchanged url=%s snapshot=%s", url, snapshot_path)
+        logger.debug("[DIFF] unchanged kind=%s url=%s snapshot=%s", kind, url, snapshot_path)
         return "unchanged", None
 
     if not prev:
-        logger.info("[DIFF] baseline url=%s snapshot=%s (BASELINE_DIFF=%s)", url, snapshot_path, BASELINE_DIFF)
+        logger.info("[DIFF] baseline kind=%s url=%s snapshot=%s (BASELINE_DIFF=%s)",
+                    kind, url, snapshot_path, BASELINE_DIFF)
         save_snapshot_lines(snapshot_path, cur)
         if BASELINE_DIFF:
-            diff_rel = _write_diff_file(url, [], cur)
+            diff_rel = _write_diff_file(url, [], cur, kind=kind)
             return "baseline", diff_rel
         return "baseline", None
 
-    logger.info("[DIFF] changed url=%s snapshot=%s prev_lines=%d cur_lines=%d",
-                url, snapshot_path, len(prev), len(cur))
-    diff_rel = _write_diff_file(url, prev, cur)
+    logger.info("[DIFF] changed kind=%s url=%s snapshot=%s prev_lines=%d cur_lines=%d",
+                kind, url, snapshot_path, len(prev), len(cur))
+    diff_rel = _write_diff_file(url, prev, cur, kind=kind)
     save_snapshot_lines(snapshot_path, cur)
     return "changed", diff_rel
+
+
+def check_and_record_page_changes(url: str) -> Tuple[str, Optional[str], str, Optional[str]]:
+    ensure_dirs()
+
+    safe = url_to_safe_filename(url)
+    body_snapshot_path = os.path.join(SNAPSHOT_DIR, f"{safe}.txt")
+    metadata_snapshot_path = os.path.join(SNAPSHOT_DIR, f"{safe}.__meta.txt")
+
+    body_cur, metadata_cur = fetch_page_snapshots(url)
+    body_status, body_diff_rel = _compare_and_record_snapshot(url, body_snapshot_path, body_cur, kind="content")
+    metadata_status, metadata_diff_rel = _compare_and_record_snapshot(
+        url, metadata_snapshot_path, metadata_cur, kind="metadata"
+    )
+    return body_status, body_diff_rel, metadata_status, metadata_diff_rel
 
 
 # -------------------------
@@ -467,6 +532,23 @@ def add_content_change_note(notes: List[str], seen: Set[str], label: str, url: s
     seen.add(key)
 
     msg = f"{label}: content changed"
+    if diff_rel:
+        msg += f" ({diff_rel})"
+    else:
+        msg += f" ({url})"
+    notes.append(msg)
+
+
+def add_metadata_change_note(notes: List[str], seen: Set[str], label: str, url: str, status: str, diff_rel: Optional[str]) -> None:
+    if status != "changed":
+        return
+
+    key = f"{label}|metadata|{diff_rel or url}"
+    if key in seen:
+        return
+    seen.add(key)
+
+    msg = f"{label} metadata changed"
     if diff_rel:
         msg += f" ({diff_rel})"
     else:
@@ -685,7 +767,7 @@ def parse_w3c_draft_version(draft_url: str) -> Optional[str]:
     W3C Editor’s Draft(또는 WD) 페이지에서 날짜/버전 식별자를 찾아
     'YYYY-MM-DD Editor's Draft' 같은 형태로 반환.
     """
-    # 강화: 메타 태그, <time>, 본문 문구, HTTP Last-Modified 헤더까지 폭넓게 탐지
+    # 강화: 메타 태그, <time>, 본문 문구까지 폭넓게 탐지
     try:
         html, headers = http_get(draft_url, return_headers=True)
     except Exception:
@@ -712,7 +794,6 @@ def parse_w3c_draft_version(draft_url: str) -> Optional[str]:
     #   - meta[name|property in {dcterms.modified,dcterms.issued,dc.date,dc.modified,last-modified}]
     #   - <time datetime="YYYY-MM-DD"> 또는 내용 텍스트 내 YYYY-MM-DD
     #   - 본문 라인 중 "This version|Last updated|Updated|Modified" 근처의 YYYY-MM-DD
-    #   - HTTP Last-Modified 헤더 파싱
     dt: Optional[str] = None
     meta_keys = {"dcterms.modified", "dcterms.issued", "dc.date", "dc.modified", "last-modified"}
     for m in soup.find_all("meta"):
@@ -750,15 +831,6 @@ def parse_w3c_draft_version(draft_url: str) -> Optional[str]:
                 if d:
                     dt = d
                     break
-
-    if not dt:
-        lm = (headers.get("Last-Modified") or "").strip()
-        if lm:
-            try:
-                dt_obj = parsedate_to_datetime(lm)
-                dt = dt_obj.date().isoformat()
-            except Exception:
-                dt = None
 
     # 3) 출력 조합(식별자 필수는 상위 validate 단계에서 확인)
     if ver and dt:
@@ -1413,9 +1485,10 @@ def write_csv_rows(path: str, fieldnames: List[str], rows: List[Dict[str, str]])
 
 def update_readme_changelog(
     diffs_by_row: List[Tuple[str, str, List[str]]],
+    metadata_changes_by_row: List[Tuple[str, str, List[str]]],
     content_changes_by_row: List[Tuple[str, str, List[str]]],
 ) -> None:
-    if not diffs_by_row and not content_changes_by_row:
+    if not diffs_by_row and not metadata_changes_by_row and not content_changes_by_row:
         return
     if not os.path.exists(README_PATH):
         return
@@ -1433,6 +1506,11 @@ def update_readme_changelog(
         joined = "; ".join(diffs)
         version_lines.append(f"- [{org}] {name}: {joined}")
 
+    metadata_lines: List[str] = []
+    for org, name, notes in metadata_changes_by_row:
+        joined = "; ".join(notes)
+        metadata_lines.append(f"- [{org}] {name}: {joined}")
+
     content_lines: List[str] = []
     for org, name, notes in content_changes_by_row:
         joined = "; ".join(notes)
@@ -1444,6 +1522,11 @@ def update_readme_changelog(
         lines.append("")
         lines.append("#### Version updates")
         lines.extend(version_lines)
+
+    if metadata_lines:
+        lines.append("")
+        lines.append("#### Metadata changes")
+        lines.extend(metadata_lines)
 
     if content_lines:
         lines.append("")
@@ -1503,6 +1586,7 @@ def main() -> int:
     csv_changed_any = False
 
     diffs_for_readme: List[Tuple[str, str, List[str]]] = []
+    metadata_changes_for_readme: List[Tuple[str, str, List[str]]] = []
     content_changes_for_readme: List[Tuple[str, str, List[str]]] = []
 
     logger.info("[RUN] rows=%d", len(rows))
@@ -1510,6 +1594,8 @@ def main() -> int:
     for idx, row in enumerate(rows, start=1):
         org = row.get("단체", "").strip()
         name = row.get("표준명 (항목)", "").strip()
+        row_metadata_notes: List[str] = []
+        row_metadata_seen: Set[str] = set()
         row_content_notes: List[str] = []
         row_content_seen: Set[str] = set()
 
@@ -1523,8 +1609,13 @@ def main() -> int:
             u = norm_na(norm_url(link))
             if not is_na(u):
                 try:
-                    status, diff_rel = check_and_record_content_change(u)
-                    add_content_change_note(row_content_notes, row_content_seen, label, u, status, diff_rel)
+                    content_status, content_diff_rel, metadata_status, metadata_diff_rel = check_and_record_page_changes(u)
+                    add_content_change_note(
+                        row_content_notes, row_content_seen, label, u, content_status, content_diff_rel
+                    )
+                    add_metadata_change_note(
+                        row_metadata_notes, row_metadata_seen, label, u, metadata_status, metadata_diff_rel
+                    )
                 except Exception:
                     logger.warning("[WARN] content snapshot failed url=%s\n%s", u, traceback.format_exc())
 
@@ -1535,9 +1626,14 @@ def main() -> int:
         try:
             discovered_stable = norm_na(norm_url(upd_raw.stable_link or ""))
             if not is_na(discovered_stable):
-                status, diff_rel = check_and_record_content_change(discovered_stable)
+                content_status, content_diff_rel, metadata_status, metadata_diff_rel = check_and_record_page_changes(
+                    discovered_stable
+                )
                 add_content_change_note(
-                    row_content_notes, row_content_seen, "Discovered stable", discovered_stable, status, diff_rel
+                    row_content_notes, row_content_seen, "Discovered stable", discovered_stable, content_status, content_diff_rel
+                )
+                add_metadata_change_note(
+                    row_metadata_notes, row_metadata_seen, "Discovered stable", discovered_stable, metadata_status, metadata_diff_rel
                 )
         except Exception:
             logger.warning("[WARN] discovered stable snapshot failed url=%s\n%s",
@@ -1546,9 +1642,14 @@ def main() -> int:
         try:
             discovered_draft = norm_na(norm_url(upd_raw.draft_link or ""))
             if not is_na(discovered_draft):
-                status, diff_rel = check_and_record_content_change(discovered_draft)
+                content_status, content_diff_rel, metadata_status, metadata_diff_rel = check_and_record_page_changes(
+                    discovered_draft
+                )
                 add_content_change_note(
-                    row_content_notes, row_content_seen, "Discovered draft", discovered_draft, status, diff_rel
+                    row_content_notes, row_content_seen, "Discovered draft", discovered_draft, content_status, content_diff_rel
+                )
+                add_metadata_change_note(
+                    row_metadata_notes, row_metadata_seen, "Discovered draft", discovered_draft, metadata_status, metadata_diff_rel
                 )
         except Exception:
             logger.warning("[WARN] discovered draft snapshot failed url=%s\n%s",
@@ -1579,6 +1680,10 @@ def main() -> int:
             csv_changed_any = True
             diffs_for_readme.append((org, name, diffs))
 
+        if row_metadata_notes:
+            changed_any = True
+            metadata_changes_for_readme.append((org, name, row_metadata_notes))
+
         if row_content_notes:
             changed_any = True
             content_changes_for_readme.append((org, name, row_content_notes))
@@ -1587,7 +1692,7 @@ def main() -> int:
         if csv_changed_any:
             write_csv_rows(CSV_PATH, fieldnames, rows)
             logger.info("[OK] standards.csv updated rows_changed=%d", len(diffs_for_readme))
-        update_readme_changelog(diffs_for_readme, content_changes_for_readme)
+        update_readme_changelog(diffs_for_readme, metadata_changes_for_readme, content_changes_for_readme)
     else:
         logger.info("[OK] No changes detected.")
 
