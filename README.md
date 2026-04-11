@@ -7,6 +7,13 @@
 
 ## 변경 내역
 
+### 2026-04-11
+
+#### Metadata changes
+- [ISO] ISO/IEC 18013-5:2021: Stable metadata changed (logs/diffs/www_iso_org_standard_69084_html__metadata__20260411-121808.diff); Discovered stable metadata changed (logs/diffs/www_iso_org_standard_69084_html__metadata__20260411-121809.diff)
+- [ISO] ISO/IEC TS 23220-6:2025: Stable metadata changed (logs/diffs/www_iso_org_standard_86787_html__metadata__20260411-121811.diff); Discovered stable metadata changed (logs/diffs/www_iso_org_standard_86787_html__metadata__20260411-121812.diff)
+
+
 ### 2026-04-10
 
 #### Version updates
