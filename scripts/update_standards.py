@@ -712,18 +712,79 @@ def discover_iso_next_draft_from_stable(stable_url: str) -> Optional[str]:
         return None
 
     soup = soup_from_html(html)
-    anchors = soup.find_all("a", href=True)
+    stable_final = norm_url(final_url)
 
-    candidates: List[str] = []
-    for a in anchors:
+    def _is_iso_catalog_url(url: str) -> bool:
+        return "iso.org/standard/" in url and bool(re.search(r"/standard/\d+\.html$", url))
+
+    def _catalog_links_in(node) -> List[str]:
+        links: List[str] = []
+        seen: Set[str] = set()
+        if not node:
+            return links
+        for a in node.find_all("a", href=True):
+            href = (a.get("href") or "").strip()
+            if not href:
+                continue
+            u = norm_url(urljoin(final_url, href))
+            if not _is_iso_catalog_url(u):
+                continue
+            if u == stable_final:
+                continue
+            if u in seen:
+                continue
+            seen.add(u)
+            links.append(u)
+        return links
+
+    section_patterns = [
+        r"next version under development",
+        r"expected to be replaced by",
+        r"will be replaced by",
+        r"\bunder development\b",
+    ]
+
+    for pattern in section_patterns:
+        marker = soup.find(string=re.compile(pattern, re.IGNORECASE))
+        if not marker:
+            continue
+
+        # Prefer the nearest semantic container first, then widen cautiously.
+        containers = [
+            marker.find_parent(["section", "article", "div", "li", "ul"]),
+            marker.find_parent(["section", "article"]),
+            marker.parent,
+        ]
+        seen_nodes = set()
+        for container in containers:
+            if not container:
+                continue
+            node_id = id(container)
+            if node_id in seen_nodes:
+                continue
+            seen_nodes.add(node_id)
+            links = _catalog_links_in(container)
+            if links:
+                logger.debug("[ISO] draft discovery matched pattern=%r stable=%s draft=%s",
+                             pattern, stable_final, links[0])
+                return links[0]
+
+    # Fallback: if ISO keeps the draft reference inline without a stable-specific section,
+    # look for catalog links whose anchor text clearly signals draft status.
+    for a in soup.find_all("a", href=True):
         href = (a.get("href") or "").strip()
         if not href:
             continue
         u = norm_url(urljoin(final_url, href))
-        if "iso.org/standard/" in u and re.search(r"/standard/\d+\.html$", u):
-            candidates.append(u)
+        if not _is_iso_catalog_url(u) or u == stable_final:
+            continue
+        txt = (a.get_text(" ", strip=True) or "").strip()
+        if re.search(r"\b(DIS|FDIS|Draft)\b", txt, re.IGNORECASE):
+            logger.debug("[ISO] draft discovery fallback stable=%s draft=%s anchor=%r",
+                         stable_final, u, txt[:120])
+            return u
 
-    return candidates[0] if candidates else None
+    return None
 
 
 def parse_iso_draft(url: str) -> Tuple[Optional[str], Optional[str]]:
