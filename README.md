@@ -7,6 +7,23 @@
 
 ## 변경 내역
 
+### 2026-04-15
+
+#### Version updates
+- [ISO] ISO/IEC 18013-5:2021: Draft Version: ISO/IEC DIS 18013-5 (DIS ballot initiated: 2020-02-05) → ISO/IEC DIS 18013-5 (DIS ballot initiated: 2026-01-01); Draft Version Link: https://www.iso.org/standard/69084.html → https://www.iso.org/standard/91081.html
+
+#### Metadata changes
+- [ISO] ISO/IEC 18013-5:2021: Stable metadata changed (logs/diffs/www_iso_org_standard_69084_html__metadata__20260415-123735.diff); Discovered draft metadata baseline created (logs/diffs/www_iso_org_standard_91081_html__metadata__20260415-123735.diff)
+- [ISO] ISO/IEC TS 23220-6:2025: Stable metadata changed (logs/diffs/www_iso_org_standard_86787_html__metadata__20260415-123736.diff)
+
+<details>
+<summary>Content diffs (click to expand)</summary>
+
+- [ISO] ISO/IEC 18013-5:2021: Discovered draft: content baseline created (logs/diffs/www_iso_org_standard_91081_html__content__20260415-123735.diff)
+
+</details>
+
+
 ### 2026-04-14
 
 #### Metadata changes
