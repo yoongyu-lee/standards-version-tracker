@@ -7,6 +7,20 @@
 
 ## 변경 내역
 
+### 2026-04-17
+
+#### Metadata changes
+- [W3C] VC Data Model: Draft metadata changed (logs/diffs/w3c_github_io_vc_data_model___metadata__20260417-124335.diff)
+
+<details>
+<summary>Content diffs (click to expand)</summary>
+
+- [OIDF] The OAuth 2.0 Authorization Framework (RFC 6749): Stable: content changed (logs/diffs/datatracker_ietf_org_doc_rfc6749___content__20260417-124341.diff)
+- [IETF] Selective Disclosure for JSON Web Tokens: Stable: content changed (logs/diffs/datatracker_ietf_org_doc_rfc9901___content__20260417-124344.diff)
+
+</details>
+
+
 ### 2026-04-16
 
 #### Metadata changes
