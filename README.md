@@ -7,6 +7,12 @@
 
 ## 변경 내역
 
+### 2026-04-20
+
+#### Metadata changes
+- [W3C] VC Data Model: Draft metadata changed (logs/diffs/w3c_github_io_vc_data_model___metadata__20260420-125001.diff)
+
+
 ### 2026-04-18
 
 #### Metadata changes
