@@ -7,6 +7,22 @@
 
 ## 변경 내역
 
+### 2026-04-22
+
+#### Metadata changes
+- [W3C] VC Data Model: Draft metadata changed (logs/diffs/w3c_github_io_vc_data_model___metadata__20260422-124031.diff)
+- [ISO] ISO/IEC 18013-5:2021: Stable metadata changed (logs/diffs/www_iso_org_standard_69084_html__metadata__20260422-124037.diff); Draft metadata changed (logs/diffs/www_iso_org_standard_91081_html__metadata__20260422-124037.diff)
+- [ISO] ISO/IEC TS 23220-6:2025: Stable metadata changed (logs/diffs/www_iso_org_standard_86787_html__metadata__20260422-124038.diff)
+
+<details>
+<summary>Content diffs (click to expand)</summary>
+
+- [ISO] ISO/IEC 18013-5:2021: Stable: content changed (logs/diffs/www_iso_org_standard_69084_html__content__20260422-124037.diff); Draft: content changed (logs/diffs/www_iso_org_standard_91081_html__content__20260422-124037.diff)
+- [ISO] ISO/IEC TS 23220-6:2025: Stable: content changed (logs/diffs/www_iso_org_standard_86787_html__content__20260422-124038.diff)
+
+</details>
+
+
 ### 2026-04-21
 
 #### Metadata changes
