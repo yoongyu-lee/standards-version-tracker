@@ -7,6 +7,17 @@
 
 ## 변경 내역
 
+### 2026-05-11
+
+#### Version updates
+- [W3C] VC Data Model: Draft Version: v2.1 (2026-04-29 Editor's Draft) → v2.1 (2026-05-11 Editor's Draft)
+
+#### Metadata changes
+- [W3C] VC Data Model: Draft metadata changed (logs/diffs/w3c_github_io_vc_data_model___metadata__20260511-133315.diff)
+- [ISO] ISO/IEC 18013-5:2021: Stable metadata changed (logs/diffs/www_iso_org_standard_69084_html__metadata__20260511-133321.diff); Draft metadata changed (logs/diffs/www_iso_org_standard_91081_html__metadata__20260511-133322.diff)
+- [ISO] ISO/IEC TS 23220-6:2025: Stable metadata changed (logs/diffs/www_iso_org_standard_86787_html__metadata__20260511-133322.diff)
+
+
 ### 2026-05-10
 
 #### Metadata changes
