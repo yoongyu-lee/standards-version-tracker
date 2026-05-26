@@ -7,6 +7,13 @@
 
 ## 변경 내역
 
+### 2026-05-26
+
+#### Metadata changes
+- [ISO] ISO/IEC 18013-5:2021: Stable metadata changed (logs/diffs/www_iso_org_standard_69084_html__metadata__20260526-133235.diff); Draft metadata changed (logs/diffs/www_iso_org_standard_91081_html__metadata__20260526-133235.diff)
+- [ISO] ISO/IEC TS 23220-6:2025: Stable metadata changed (logs/diffs/www_iso_org_standard_86787_html__metadata__20260526-133237.diff)
+
+
 ### 2026-05-25
 
 #### Metadata changes
