@@ -7,6 +7,26 @@
 
 ## 변경 내역
 
+### 2026-06-22
+
+#### Version updates
+- [ISO] ISO/IEC 18013-5:2021: Stable Version Link: https://www.iso.org/standard/69084.html → https://status.iso.org/incidents/m96dk0c0v4z3; Draft Version Link: https://www.iso.org/standard/91081.html → https://status.iso.org/incidents/m96dk0c0v4z3
+- [ISO] ISO/IEC TS 23220-6:2025: Stable Version Link: https://www.iso.org/standard/86787.html → https://status.iso.org/incidents/m96dk0c0v4z3
+
+#### Metadata changes
+- [ISO] ISO/IEC 18013-5:2021: Stable metadata changed (logs/diffs/www_iso_org_standard_69084_html__metadata__20260622-142755.diff); Draft metadata changed (logs/diffs/www_iso_org_standard_91081_html__metadata__20260622-142755.diff); Discovered stable metadata baseline created (logs/diffs/status_iso_org_incidents_m96dk0c0v4z3__metadata__20260622-142756.diff)
+- [ISO] ISO/IEC TS 23220-6:2025: Stable metadata changed (logs/diffs/www_iso_org_standard_86787_html__metadata__20260622-142757.diff); Discovered stable metadata changed (logs/diffs/status_iso_org_incidents_m96dk0c0v4z3__metadata__20260622-142757.diff)
+- [EU] EUDI Wallet Architecture and Reference Framework: Stable metadata changed (logs/diffs/eu_digital_identity_wallet_github_io_eudi_doc_architecture_and_reference_framework_2_7_3_architecture_and_reference_framework_main___metadata__20260622-142803.diff)
+
+<details>
+<summary>Content diffs (click to expand)</summary>
+
+- [ISO] ISO/IEC 18013-5:2021: Stable: content changed (logs/diffs/www_iso_org_standard_69084_html__content__20260622-142755.diff); Draft: content changed (logs/diffs/www_iso_org_standard_91081_html__content__20260622-142755.diff); Discovered stable: content baseline created (logs/diffs/status_iso_org_incidents_m96dk0c0v4z3__content__20260622-142756.diff)
+- [ISO] ISO/IEC TS 23220-6:2025: Stable: content changed (logs/diffs/www_iso_org_standard_86787_html__content__20260622-142757.diff)
+
+</details>
+
+
 ### 2026-06-21
 
 #### Metadata changes
