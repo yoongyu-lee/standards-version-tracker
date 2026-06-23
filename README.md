@@ -7,6 +7,19 @@
 
 ## 변경 내역
 
+### 2026-06-23
+
+#### Metadata changes
+- [ISO] ISO/IEC 18013-5:2021: Stable metadata changed (logs/diffs/status_iso_org_incidents_m96dk0c0v4z3__metadata__20260623-131848.diff)
+
+<details>
+<summary>Content diffs (click to expand)</summary>
+
+- [ISO] ISO/IEC 18013-5:2021: Stable: content changed (logs/diffs/status_iso_org_incidents_m96dk0c0v4z3__content__20260623-131848.diff)
+
+</details>
+
+
 ### 2026-06-22
 
 #### Version updates
