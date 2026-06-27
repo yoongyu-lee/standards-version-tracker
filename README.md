@@ -7,6 +7,12 @@
 
 ## 변경 내역
 
+### 2026-06-27
+
+#### Metadata changes
+- [EU] EUDI Wallet Architecture and Reference Framework: Stable metadata changed (logs/diffs/eu_digital_identity_wallet_github_io_eudi_doc_architecture_and_reference_framework_2_7_3_architecture_and_reference_framework_main___metadata__20260627-131413.diff)
+
+
 ### 2026-06-26
 
 #### Metadata changes
