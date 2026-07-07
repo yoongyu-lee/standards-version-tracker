@@ -7,6 +7,19 @@
 
 ## 변경 내역
 
+### 2026-07-07
+
+#### Metadata changes
+- [ISO] ISO/IEC 18013-5:2021: Stable metadata changed (logs/diffs/status_iso_org_incidents_m96dk0c0v4z3__metadata__20260707-131448.diff)
+
+<details>
+<summary>Content diffs (click to expand)</summary>
+
+- [IETF] SD-JWT-based Verifiable Credentials (SD-JWT VC): Draft: content changed (logs/diffs/datatracker_ietf_org_doc_html_draft_ietf_oauth_sd_jwt_vc_15__content__20260707-131451.diff)
+
+</details>
+
+
 ### 2026-07-06
 
 #### Metadata changes
