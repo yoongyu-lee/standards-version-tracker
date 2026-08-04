@@ -7,6 +7,25 @@
 
 ## 변경 내역
 
+### 2026-08-04
+
+#### Version updates
+- [W3C] Verifiable Credential Data Integrity: Draft Version: v1.1 (2026-07-22 Editor's Draft) → v1.1 (2026-08-03 Editor's Draft)
+
+#### Metadata changes
+- [W3C] Verifiable Credential Data Integrity: Draft metadata changed (logs/diffs/w3c_github_io_vc_data_integrity___metadata__20260804-123324.diff)
+- [ISO] ISO/IEC 18013-5:2021: Stable metadata changed (logs/diffs/status_iso_org_incidents_m96dk0c0v4z3__metadata__20260804-123328.diff)
+- [EU] EUDI Wallet Architecture and Reference Framework: Stable metadata changed (logs/diffs/eu_digital_identity_wallet_github_io_eudi_doc_architecture_and_reference_framework_2_7_3_architecture_and_reference_framework_main___metadata__20260804-123334.diff)
+
+<details>
+<summary>Content diffs (click to expand)</summary>
+
+- [W3C] Verifiable Credential Data Integrity: Draft: content changed (logs/diffs/w3c_github_io_vc_data_integrity___content__20260804-123324.diff)
+- [IETF] SD-JWT-based Verifiable Credentials (SD-JWT VC): Draft: content changed (logs/diffs/datatracker_ietf_org_doc_html_draft_ietf_oauth_sd_jwt_vc_15__content__20260804-123333.diff)
+
+</details>
+
+
 ### 2026-08-03
 
 #### Metadata changes

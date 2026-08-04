@@ -1,6 +1,6 @@
 단체,표준명 (항목),Stable Version,Draft Version,핵심 변경 내용,Stable Version Link,Draft Version Link
 W3C,VC Data Model,v2.0,v2.1 (2026-05-11 Editor's Draft),draft v2.1 (2026-04-29 Editor's Draft) -> v2.1 (2026-05-11 Editor's Draft),https://www.w3.org/TR/vc-data-model-2.0/,https://w3c.github.io/vc-data-model/
-W3C,Verifiable Credential Data Integrity,v1.0,v1.1 (2026-07-22 Editor's Draft),draft v1.1 (2026-07-13 Editor's Draft) -> v1.1 (2026-07-22 Editor's Draft),https://www.w3.org/TR/vc-data-integrity/,https://w3c.github.io/vc-data-integrity/
+W3C,Verifiable Credential Data Integrity,v1.0,v1.1 (2026-08-03 Editor's Draft),draft v1.1 (2026-07-22 Editor's Draft) -> v1.1 (2026-08-03 Editor's Draft),https://www.w3.org/TR/vc-data-integrity/,https://w3c.github.io/vc-data-integrity/
 W3C,Decentralized Identifiers (DIDs),v1.0,v1.1 (2026-03-05 Editor's Draft),stable N/A -> v1.0; draft N/A -> v1.1 (2026-03-05 Editor's Draft),https://www.w3.org/TR/did-core/,https://www.w3.org/TR/did-1.1/
 ISO,ISO/IEC 18013-5:2021,ISO/IEC 18013-5:2021 (ISO Publication: 2021-09),ISO/IEC DIS 18013-5 (DIS ballot initiated: 2026-01-01),draft ISO/IEC DIS 18013-5 (DIS ballot initiated: 2020-02-05) -> ISO/IEC DIS 18013-5 (DIS ballot initiated: 2026-01-01),https://status.iso.org/incidents/m96dk0c0v4z3,https://status.iso.org/incidents/m96dk0c0v4z3
 ISO,ISO/IEC TS 23220-6:2025,ISO/IEC TS 23220-6:2025 (ISO Publication: 2025-10),N/A,stable N/A -> ISO/IEC TS 23220-6:2025 (ISO Publication: 2025-10),https://status.iso.org/incidents/m96dk0c0v4z3,N/A
