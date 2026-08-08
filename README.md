@@ -7,6 +7,13 @@
 
 ## 변경 내역
 
+### 2026-08-08
+
+#### Metadata changes
+- [ISO] ISO/IEC 18013-5:2021: Stable metadata changed (logs/diffs/status_iso_org_incidents_m96dk0c0v4z3__metadata__20260808-111913.diff)
+- [EU] EUDI Wallet Architecture and Reference Framework: Discovered stable metadata changed (logs/diffs/eu_digital_identity_wallet_github_io_eudi_doc_architecture_and_reference_framework_2_7_3_architecture_and_reference_framework_main___metadata__20260808-111921.diff)
+
+
 ### 2026-08-07
 
 #### Metadata changes
