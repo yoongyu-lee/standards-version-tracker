@@ -7,6 +7,17 @@
 
 ## 변경 내역
 
+### 2026-08-15
+
+#### Version updates
+- [ISO] ISO/IEC 18013-5:2021: Stable Version Link: https://status.iso.org/incidents/m96dk0c0v4z3 → http://status.iso.org/incidents/m96dk0c0v4z3
+- [ISO] ISO/IEC TS 23220-6:2025: Stable Version Link: https://status.iso.org/incidents/m96dk0c0v4z3 → http://status.iso.org/incidents/m96dk0c0v4z3
+
+#### Metadata changes
+- [ISO] ISO/IEC 18013-5:2021: Stable metadata changed (logs/diffs/status_iso_org_incidents_m96dk0c0v4z3__metadata__20260815-104710.diff)
+- [IETF] Selective Disclosure for JSON Web Tokens: Stable metadata changed (logs/diffs/www_rfc_editor_org_info_rfc9901___metadata__20260815-104717.diff); Discovered stable metadata changed (logs/diffs/www_rfc_editor_org_info_rfc9901___metadata__20260815-104718.diff)
+
+
 ### 2026-08-14
 
 #### Version updates
