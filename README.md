@@ -7,6 +7,18 @@
 
 ## 변경 내역
 
+### 2026-08-16
+
+#### Version updates
+- [ISO] ISO/IEC 18013-5:2021: Stable Version Link: http://status.iso.org/incidents/m96dk0c0v4z3 → https://status.iso.org/incidents/m96dk0c0v4z3
+- [ISO] ISO/IEC TS 23220-6:2025: Stable Version Link: http://status.iso.org/incidents/m96dk0c0v4z3 → https://status.iso.org/incidents/m96dk0c0v4z3
+
+#### Metadata changes
+- [ISO] ISO/IEC 18013-5:2021: Stable metadata changed (logs/diffs/status_iso_org_incidents_m96dk0c0v4z3__metadata__20260816-105503.diff)
+- [IETF] Selective Disclosure for JSON Web Tokens: Stable metadata changed (logs/diffs/www_rfc_editor_org_info_rfc9901___metadata__20260816-105508.diff); Discovered stable metadata changed (logs/diffs/www_rfc_editor_org_info_rfc9901___metadata__20260816-105509.diff)
+- [EU] EUDI Wallet Architecture and Reference Framework: Stable metadata changed (logs/diffs/eu_digital_identity_wallet_github_io_eudi_doc_architecture_and_reference_framework_2_7_3_architecture_and_reference_framework_main___metadata__20260816-105511.diff); Discovered stable metadata changed (logs/diffs/eu_digital_identity_wallet_github_io_eudi_doc_architecture_and_reference_framework_2_7_3_architecture_and_reference_framework_main___metadata__20260816-105512.diff)
+
+
 ### 2026-08-15
 
 #### Version updates
