@@ -7,6 +7,25 @@
 
 ## 변경 내역
 
+### 2026-08-21
+
+#### Version updates
+- [W3C] Verifiable Credential Data Integrity: Draft Version: v1.1 (2026-08-03 Editor's Draft) → v1.1 (2026-08-20 Editor's Draft)
+
+#### Metadata changes
+- [W3C] Verifiable Credential Data Integrity: Draft metadata changed (logs/diffs/w3c_github_io_vc_data_integrity___metadata__20260821-105512.diff)
+- [ISO] ISO/IEC 18013-5:2021: Stable metadata changed (logs/diffs/status_iso_org_incidents_m96dk0c0v4z3__metadata__20260821-105516.diff)
+- [IETF] Selective Disclosure for JSON Web Tokens: Stable metadata changed (logs/diffs/www_rfc_editor_org_info_rfc9901___metadata__20260821-105520.diff)
+
+<details>
+<summary>Content diffs (click to expand)</summary>
+
+- [W3C] Verifiable Credential Data Integrity: Draft: content changed (logs/diffs/w3c_github_io_vc_data_integrity___content__20260821-105512.diff)
+- [OIDF] The OAuth 2.0 Authorization Framework (RFC 6749): Stable: content changed (logs/diffs/datatracker_ietf_org_doc_rfc6749___content__20260821-105516.diff)
+
+</details>
+
+
 ### 2026-08-20
 
 #### Metadata changes
