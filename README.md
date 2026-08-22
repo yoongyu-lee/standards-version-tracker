@@ -7,6 +7,13 @@
 
 ## 변경 내역
 
+### 2026-08-22
+
+#### Metadata changes
+- [ISO] ISO/IEC 18013-5:2021: Stable metadata changed (logs/diffs/status_iso_org_incidents_m96dk0c0v4z3__metadata__20260822-104752.diff)
+- [IETF] Selective Disclosure for JSON Web Tokens: Stable metadata changed (logs/diffs/www_rfc_editor_org_info_rfc9901___metadata__20260822-104758.diff); Discovered stable metadata changed (logs/diffs/www_rfc_editor_org_info_rfc9901___metadata__20260822-104759.diff)
+
+
 ### 2026-08-21
 
 #### Version updates
