@@ -7,6 +7,17 @@
 
 ## 변경 내역
 
+### 2026-09-02
+
+#### Version updates
+- [W3C] Verifiable Credential Data Integrity: Draft Version: v1.1 (2026-08-27 Editor's Draft) → v1.1 (2026-09-01 Editor's Draft)
+
+#### Metadata changes
+- [W3C] Verifiable Credential Data Integrity: Draft metadata changed (logs/diffs/w3c_github_io_vc_data_integrity___metadata__20260902-132657.diff)
+- [IETF] Selective Disclosure for JSON Web Tokens: Stable metadata changed (logs/diffs/www_rfc_editor_org_info_rfc9901___metadata__20260902-132707.diff); Discovered stable metadata changed (logs/diffs/www_rfc_editor_org_info_rfc9901___metadata__20260902-132708.diff)
+- [EU] EUDI Wallet Architecture and Reference Framework: Stable metadata changed (logs/diffs/eu_digital_identity_wallet_github_io_eudi_doc_architecture_and_reference_framework_2_7_3_architecture_and_reference_framework_main___metadata__20260902-132709.diff)
+
+
 ### 2026-09-01
 
 #### Metadata changes
