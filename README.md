@@ -7,6 +7,17 @@
 
 ## 변경 내역
 
+### 2026-09-27
+
+#### Version updates
+- [W3C] VC Data Model: Draft Version: v2.1 (2026-09-20 Editor's Draft) → v2.1 (2026-09-26 Editor's Draft)
+
+#### Metadata changes
+- [W3C] VC Data Model: Draft metadata changed (logs/diffs/w3c_github_io_vc_data_model___metadata__20260927-141346.diff)
+- [ISO] ISO/IEC 18013-5:2021: Stable metadata changed (logs/diffs/status_iso_org_incidents_m96dk0c0v4z3__metadata__20260927-141352.diff)
+- [IETF] Selective Disclosure for JSON Web Tokens: Stable metadata changed (logs/diffs/www_rfc_editor_org_info_rfc9901___metadata__20260927-141356.diff)
+
+
 ### 2026-09-26
 
 #### Metadata changes
