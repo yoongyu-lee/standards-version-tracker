@@ -7,6 +7,21 @@
 
 ## 변경 내역
 
+### 2026-09-30
+
+#### Metadata changes
+- [ISO] ISO/IEC 18013-5:2021: Stable metadata changed (logs/diffs/status_iso_org_incidents_m96dk0c0v4z3__metadata__20260930-142728.diff)
+- [IETF] Selective Disclosure for JSON Web Tokens: Stable metadata changed (logs/diffs/www_rfc_editor_org_info_rfc9901___metadata__20260930-142734.diff); Discovered stable metadata changed (logs/diffs/www_rfc_editor_org_info_rfc9901___metadata__20260930-142736.diff)
+
+<details>
+<summary>Content diffs (click to expand)</summary>
+
+- [OIDF] The OAuth 2.0 Authorization Framework (RFC 6749): Stable: content changed (logs/diffs/datatracker_ietf_org_doc_rfc6749___content__20260930-142729.diff)
+- [IETF] Selective Disclosure for JSON Web Tokens: Stable: content changed (logs/diffs/www_rfc_editor_org_info_rfc9901___content__20260930-142734.diff)
+
+</details>
+
+
 ### 2026-09-29
 
 #### Metadata changes
