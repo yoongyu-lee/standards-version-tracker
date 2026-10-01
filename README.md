@@ -7,6 +7,29 @@
 
 ## 변경 내역
 
+### 2026-10-01
+
+#### Version updates
+- [W3C] VC Data Model: Draft Version: v2.1 (2026-09-27 Editor's Draft) → v2.1 (2026-09-30 Editor's Draft)
+- [W3C] Verifiable Credential Data Integrity: Draft Version: v1.1 (2026-09-19 Editor's Draft) → v1.1 (2026-09-30 Editor's Draft)
+
+#### Metadata changes
+- [W3C] VC Data Model: Draft metadata changed (logs/diffs/w3c_github_io_vc_data_model___metadata__20261001-144556.diff)
+- [W3C] Verifiable Credential Data Integrity: Draft metadata changed (logs/diffs/w3c_github_io_vc_data_integrity___metadata__20261001-144558.diff)
+- [ISO] ISO/IEC 18013-5:2021: Stable metadata changed (logs/diffs/status_iso_org_incidents_m96dk0c0v4z3__metadata__20261001-144602.diff)
+- [IETF] Selective Disclosure for JSON Web Tokens: Stable metadata changed (logs/diffs/www_rfc_editor_org_info_rfc9901___metadata__20261001-144605.diff)
+- [EU] EUDI Wallet Architecture and Reference Framework: Stable metadata changed (logs/diffs/eu_digital_identity_wallet_github_io_eudi_doc_architecture_and_reference_framework_2_7_3_architecture_and_reference_framework_main___metadata__20261001-144608.diff)
+
+<details>
+<summary>Content diffs (click to expand)</summary>
+
+- [W3C] VC Data Model: Draft: content changed (logs/diffs/w3c_github_io_vc_data_model___content__20261001-144556.diff)
+- [W3C] Verifiable Credential Data Integrity: Draft: content changed (logs/diffs/w3c_github_io_vc_data_integrity___content__20261001-144558.diff)
+- [IETF] Selective Disclosure for JSON Web Tokens: Stable: content changed (logs/diffs/www_rfc_editor_org_info_rfc9901___content__20261001-144605.diff)
+
+</details>
+
+
 ### 2026-09-30
 
 #### Metadata changes
